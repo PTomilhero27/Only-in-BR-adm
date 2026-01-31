@@ -14,7 +14,7 @@ import {
 
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FairSummary } from "@/app/modules/fairs/types";
+import { FairSummary } from "@/app/modules/fairs/exhibitors/exhibitors.schema";
 
 /**
  * Modal de seleção de feira (focado nas feiras ATIVAS).
