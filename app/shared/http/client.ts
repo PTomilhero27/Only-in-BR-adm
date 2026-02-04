@@ -14,7 +14,7 @@ if (!API_URL) {
 
 export const http = ky.create({
   prefixUrl: API_URL,
-  timeout: 20_000,
+  timeout: false,
   hooks: {
     beforeRequest: [
       (request) => {

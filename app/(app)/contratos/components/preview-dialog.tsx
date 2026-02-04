@@ -1,48 +1,97 @@
-"use client";
+"use client"
 
-import { DocumentTemplate } from "@/app/modules/contratos/document-templates/document-templates.schema";
-/**
- * Preview (placeholder).
- * Responsabilidade:
- * - Mostrar como o contrato está ficando.
- *
- * Próximos passos:
- * - Renderizar rich text formatado.
- * - Aplicar layout “cara de contrato” (tipografia, margens, etc).
- */
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import * as React from "react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import { cn } from "@/lib/utils"
+
+import type { DocumentTemplate } from "@/app/modules/contratos/document-templates/document-templates.schema"
+import type { FairExhibitorRow } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
+import { ContractHtml } from "../../feiras/[fairId]/barracas/contrato/components/contract-html"
+
+// ✅ ajuste o import pro seu caminho real
 
 export function PreviewDialog(props: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  template: DocumentTemplate | null;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  template: DocumentTemplate | null
 }) {
-  const { open, onOpenChange, template } = props;
+  const { open, onOpenChange, template } = props
+
+  // stub só pra renderizar preview
+  const fakeRow = React.useMemo(() => {
+    const row: Partial<FairExhibitorRow> = {
+      owner: {
+        id: "preview-owner",
+        personType: "PJ",
+        fullName: "Exemplo de Expositor",
+        document: "12.345.678/0001-90",
+        email: "exemplo@onlyinbr.com.br",
+        phone: "(11) 99999-9999",
+      } as any,
+    }
+    return row as FairExhibitorRow
+  }, [])
+
+  const title = template?.title ?? "—"
+  const content = (template as any)?.content ?? null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
+      <DialogContent
+        className={cn(
+          "p-0",
+          "w-[calc(100vw-24px)] sm:w-full",
+          "max-w-4xl",
+          // ✅ altura limitada -> scroll vai existir
+          "h-[90vh] sm:h-[85vh]",
+          // ✅ layout previsível: header fixo, body rolável
+          "flex flex-col "
+        )}
+      >
+        {/* HEADER fixo */}
+        <DialogHeader className="shrink-0 px-4 py-3 border-b">
           <DialogTitle>Preview do contrato</DialogTitle>
+          <div className="text-xs text-muted-foreground truncate">{title}</div>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <div className="text-sm font-medium">{template?.title ?? "—"}</div>
+        <Separator />
 
-          <div className="rounded-md border p-4 text-sm text-muted-foreground">
-            Preview ainda simples (placeholder). Na próxima etapa vamos renderizar:
-            <ul className="ml-5 mt-2 list-disc">
-              <li>ficha cadastral (se habilitada)</li>
-              <li>cláusulas e incisos numerados</li>
-              <li>texto livre com negrito/itálico/listas</li>
-            </ul>
-          </div>
+        {/* BODY rolável */}
+        <div className="flex-1 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="px-3 py-4 sm:px-4">
+              {/* “Papel” */}
+              <div className="mx-auto max-w-[850px] rounded-xl border bg-white shadow-sm">
+                <div className="p-6 sm:p-10">
+                  {!template ? (
+                    <div className="py-10 text-center text-sm text-muted-foreground">
+                      Nenhum template selecionado.
+                    </div>
+                  ) : !content ? (
+                    <div className="py-10 text-center text-sm text-muted-foreground">
+                      Template sem conteúdo para renderizar.
+                    </div>
+                  ) : (
+                    <ContractHtml
+                      fairId="preview"
+                      contractId={String(template.id ?? "preview")}
+                      templateTitle={title}
+                      templateHtml={content}
+                      exhibitorRow={fakeRow}
+                      showRegistration={false}
+                    />
+                  )}
+                </div>
+              </div>
 
-          <pre className="max-h-[360px] overflow-auto rounded-md bg-muted p-3 text-xs">
-            {JSON.stringify(template?.content ?? {}, null, 2)}
-          </pre>
+              {/* espaço extra pro final não ficar colado */}
+              <div className="h-6" />
+            </div>
+          </ScrollArea>
         </div>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

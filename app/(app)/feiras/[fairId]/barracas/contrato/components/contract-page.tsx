@@ -479,13 +479,7 @@ export default function ContractPage() {
       alert("templateId não encontrado na rota.")
       return
     }
-    if (!contractInstanceId) {
-      alert(
-        "Contrato ainda não possui instância (row.contract.instance.id).\n\n" +
-          "✅ Para o novo upload (/contracts/:id/pdf), você precisa criar/garantir a instância do contrato antes."
-      )
-      return
-    }
+
     if (!contentForRenderer) {
       alert("Template sem conteúdo para gerar PDF.")
       return
@@ -518,13 +512,14 @@ export default function ContractPage() {
       // ✅ Upload novo (contractId real)
       await uploadPdfMutation.mutateAsync({
         input: {
-          contractId: contractInstanceId,
+          templateId,
           fairId,
           ownerId,
-          templateId,
+          ...(contractInstanceId ? { contractId: contractInstanceId } : {}),
           file: pdfFile,
         },
       })
+
 
       // download local
       const url = URL.createObjectURL(pdfBlob)
@@ -559,8 +554,7 @@ export default function ContractPage() {
           downloading ||
           uploadPdfMutation.isPending ||
           templateQuery.isLoading ||
-          !contentForRenderer ||
-          !contractInstanceId
+          !contentForRenderer
         }
         className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-orange-500 px-5 py-3 text-white shadow-lg hover:bg-orange-600 disabled:opacity-60"
       >

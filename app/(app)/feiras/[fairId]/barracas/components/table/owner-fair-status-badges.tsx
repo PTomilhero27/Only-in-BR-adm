@@ -8,6 +8,7 @@ import {
   CreditCard,
   FileSignature,
   CircleDot,
+  ClipboardList,
 } from "lucide-react"
 import type { OwnerFairStatus } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
 
@@ -26,6 +27,7 @@ export function getOwnerFairStatusMeta(status: OwnerFairStatus) {
         className:
           "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/40 dark:bg-blue-950/40 dark:text-blue-200",
       }
+
     case "AGUARDANDO_PAGAMENTO":
       return {
         label: "Pagamento",
@@ -33,6 +35,7 @@ export function getOwnerFairStatusMeta(status: OwnerFairStatus) {
         className:
           "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200",
       }
+
     case "AGUARDANDO_ASSINATURA":
       return {
         label: "Assinatura",
@@ -40,6 +43,15 @@ export function getOwnerFairStatusMeta(status: OwnerFairStatus) {
         className:
           "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/40 dark:bg-purple-950/40 dark:text-purple-200",
       }
+
+    case "AGUARDANDO_BARRACAS":
+      return {
+        label: "Barracas",
+        icon: <ClipboardList className="h-3.5 w-3.5" />,
+        className:
+          "border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-900/40 dark:bg-cyan-950/40 dark:text-cyan-200",
+      }
+
     case "CONCLUIDO":
       return {
         label: "Concluído",
@@ -47,12 +59,12 @@ export function getOwnerFairStatusMeta(status: OwnerFairStatus) {
         className:
           "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-200",
       }
+
     default:
       return {
         label: status,
         icon: <CircleDot className="h-3.5 w-3.5" />,
-        className:
-          "border-muted bg-muted/20 text-muted-foreground dark:bg-muted/10",
+        className: "border-muted bg-muted/20 text-muted-foreground dark:bg-muted/10",
       }
   }
 }
@@ -96,10 +108,7 @@ export function OwnerFairStatusCountBadge({
   const meta = getOwnerFairStatusMeta(status)
 
   return (
-    <Badge
-      variant="outline"
-      className={cn("gap-2 font-normal", meta.className, className)}
-    >
+    <Badge variant="outline" className={cn("gap-2 font-normal", meta.className, className)}>
       <span className="flex items-center gap-1.5">
         <span className="opacity-80">{meta.icon}</span>
         <span className="text-xs">{meta.label}</span>

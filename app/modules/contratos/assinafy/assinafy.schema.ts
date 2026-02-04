@@ -1,45 +1,35 @@
-/**
- * Contratos > Assinafy (upload PDF + gerar link de assinatura)
- *
- * Responsabilidade:
- * - Tipagem/validação forte das operações Assinafy.
- * - Evitar contratos implícitos no front (tudo validado via Zod).
- */
-
 import { z } from "zod"
 
 /**
  * -------------------------
  * UPLOAD DO PDF
  * -------------------------
- * Input do upload:
- * - contractId: instância do contrato (Contract.id) ✅ agora vem na rota
- * - fairId: feira atual
- * - ownerId: expositor (Owner.id)
- * - templateId: template do contrato (DocumentTemplate.id)
- * - file: PDF gerado (File)
+ * - templateId: vai na rota
+ * - contractId: opcional no body
  */
 export const UploadContractPdfInputSchema = z.object({
-  contractId: z.string().min(1, "Informe o contractId."),
+  templateId: z.string().min(1, "Informe o templateId."),
   fairId: z.string().min(1, "Informe o fairId."),
   ownerId: z.string().min(1, "Informe o ownerId."),
-  templateId: z.string().min(1, "Informe o templateId."),
+  contractId: z.string().min(1).optional(), // ✅ agora opcional
   file: z.instanceof(File),
 })
 
 export type UploadContractPdfInput = z.infer<typeof UploadContractPdfInputSchema>
 
 /**
- * Resposta do backend após salvar no Storage + persistir Contract.pdfPath
- * - signedUrl pode vir para debug/validação imediata (opcional)
+ * Resposta do backend após salvar PDF.
+ * - contractId sempre volta (criado ou existente)
  */
 export const UploadContractPdfResponseSchema = z.object({
-  contractId: z.string().min(1),
+  contractId: z.string().min(1), // ✅ não nullable
   pdfPath: z.string().min(1),
   signedUrl: z.string().url().optional(),
 })
 
-export type UploadContractPdfResponse = z.infer<typeof UploadContractPdfResponseSchema>
+export type UploadContractPdfResponse = z.infer<
+  typeof UploadContractPdfResponseSchema
+>
 
 /**
  * -------------------------
@@ -55,7 +45,9 @@ export const CreateAssinafySignUrlInputSchema = z.object({
   expiresAtISO: z.string().datetime().optional(),
 })
 
-export type CreateAssinafySignUrlInput = z.infer<typeof CreateAssinafySignUrlInputSchema>
+export type CreateAssinafySignUrlInput = z.infer<
+  typeof CreateAssinafySignUrlInputSchema
+>
 
 export const CreateAssinafySignUrlResponseSchema = z.object({
   signUrl: z.string().url(),
@@ -65,4 +57,6 @@ export const CreateAssinafySignUrlResponseSchema = z.object({
   reused: z.boolean(),
 })
 
-export type CreateAssinafySignUrlResponse = z.infer<typeof CreateAssinafySignUrlResponseSchema>
+export type CreateAssinafySignUrlResponse = z.infer<
+  typeof CreateAssinafySignUrlResponseSchema
+>

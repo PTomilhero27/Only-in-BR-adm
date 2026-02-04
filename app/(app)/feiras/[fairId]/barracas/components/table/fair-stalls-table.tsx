@@ -26,6 +26,28 @@ type Props = {
   isError: boolean
 }
 
+/**
+ * Wrapper para tornar a tabela responsiva no mobile:
+ * - scroll horizontal quando necessário
+ * - mantém o layout do desktop (table-fixed + colgroup)
+ */
+function ResponsiveTableWrap({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "w-full overflow-x-auto",
+        // dá um scroll suave no iOS
+        "[webkit-overflow-scrolling:touch]",
+      )}
+    >
+      {/* w-max permite a tabela ficar maior que o container e ativar scroll */}
+      <div className="min-w-full">
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function TableColGroup() {
   return (
     <colgroup>
@@ -118,60 +140,62 @@ function TableSkeleton() {
   const rows = Array.from({ length: 10 })
 
   return (
-    <Table className="table-fixed w-full">
-      <TableColGroup />
-      <TableHeader>
-        <TableRow className="bg-muted/20 hover:bg-muted/20">
-          <TableHead>Expositor</TableHead>
-          <TableHead>Documento</TableHead>
-          <TableHead>Telefone</TableHead>
-          <TableHead>Email</TableHead>
-          <TableHead className="text-center">Compradas</TableHead>
-          <TableHead className="text-center">Vinculadas</TableHead>
-          <TableHead className="text-center">Tamanhos</TableHead>
-          <TableHead className="text-center">Pagamentos</TableHead>
-          <TableHead className="text-center">Status</TableHead>
-          <TableHead className="text-center">Ações</TableHead>
-        </TableRow>
-      </TableHeader>
-
-      <TableBody>
-        {rows.map((_, idx) => (
-          <TableRow key={idx} className="hover:bg-transparent">
-            <TableCell>
-              <Skeleton className="h-4 w-[180px]" />
-            </TableCell>
-            <TableCell>
-              <Skeleton className="h-6 w-[140px] rounded-full" />
-            </TableCell>
-            <TableCell>
-              <Skeleton className="h-4 w-[160px]" />
-            </TableCell>
-            <TableCell>
-              <Skeleton className="h-4 w-[180px]" />
-            </TableCell>
-            <TableCell className="text-center">
-              <Skeleton className="mx-auto h-7 w-[70px] rounded-full" />
-            </TableCell>
-            <TableCell className="text-center">
-              <Skeleton className="mx-auto h-7 w-[86px] rounded-full" />
-            </TableCell>
-            <TableCell className="text-center">
-              <Skeleton className="mx-auto h-7 w-[110px] rounded-full" />
-            </TableCell>
-            <TableCell className="text-center">
-              <Skeleton className="mx-auto h-7 w-[160px] rounded-full" />
-            </TableCell>
-            <TableCell className="text-center">
-              <Skeleton className="mx-auto h-7 w-[110px] rounded-full" />
-            </TableCell>
-            <TableCell className="text-center">
-              <Skeleton className="mx-auto h-8 w-8 rounded-md" />
-            </TableCell>
+    <ResponsiveTableWrap>
+      <Table className="table-fixed w-max min-w-full">
+        <TableColGroup />
+        <TableHeader>
+          <TableRow className="bg-muted/20 hover:bg-muted/20">
+            <TableHead className="whitespace-nowrap">Expositor</TableHead>
+            <TableHead className="whitespace-nowrap">Documento</TableHead>
+            <TableHead className="whitespace-nowrap">Telefone</TableHead>
+            <TableHead className="whitespace-nowrap">Email</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Compradas</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Vinculadas</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Tamanhos</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Pagamentos</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Status</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Ações</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+
+        <TableBody>
+          {rows.map((_, idx) => (
+            <TableRow key={idx} className="hover:bg-transparent">
+              <TableCell>
+                <Skeleton className="h-4 w-[180px]" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-6 w-[140px] rounded-full" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-4 w-[160px]" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-4 w-[180px]" />
+              </TableCell>
+              <TableCell className="text-center">
+                <Skeleton className="mx-auto h-7 w-[70px] rounded-full" />
+              </TableCell>
+              <TableCell className="text-center">
+                <Skeleton className="mx-auto h-7 w-[86px] rounded-full" />
+              </TableCell>
+              <TableCell className="text-center">
+                <Skeleton className="mx-auto h-7 w-[110px] rounded-full" />
+              </TableCell>
+              <TableCell className="text-center">
+                <Skeleton className="mx-auto h-7 w-[160px] rounded-full" />
+              </TableCell>
+              <TableCell className="text-center">
+                <Skeleton className="mx-auto h-7 w-[110px] rounded-full" />
+              </TableCell>
+              <TableCell className="text-center">
+                <Skeleton className="mx-auto h-8 w-8 rounded-md" />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </ResponsiveTableWrap>
   )
 }
 
@@ -253,7 +277,8 @@ function StatusBadge({ status }: { status: OwnerFairStatus }) {
       variant="outline"
       className={cn(
         "rounded-full px-3 py-1 text-xs font-medium border-muted/60",
-        "whitespace-normal text-center leading-tight",
+        // no mobile é melhor não quebrar o status dentro da célula
+        "whitespace-nowrap text-center leading-tight",
         "max-w-full",
         meta.className,
       )}
@@ -358,145 +383,150 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
         </div>
       ) : (
         <div className="px-1">
-          <Table className="table-fixed w-full">
-            <TableColGroup />
+          <ResponsiveTableWrap>
+            <Table className="table-fixed w-max min-w-full">
+              <TableColGroup />
 
-            <TableHeader>
-              <TableRow className="bg-muted/20 hover:bg-muted/20">
-                <TableHead>Expositor</TableHead>
-                <TableHead>Documento</TableHead>
-                <TableHead>Telefone</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead className="text-center">Compradas</TableHead>
-                <TableHead className="text-center">Vinculadas</TableHead>
-                <TableHead className="text-center">Tamanhos</TableHead>
-                <TableHead className="text-center">Pagamentos</TableHead>
-                <TableHead className="text-center">Status</TableHead>
-                <TableHead className="text-center">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
+              <TableHeader>
+                <TableRow className="bg-muted/20 hover:bg-muted/20">
+                  <TableHead className="whitespace-nowrap">Expositor</TableHead>
+                  <TableHead className="whitespace-nowrap">Documento</TableHead>
+                  <TableHead className="whitespace-nowrap">Telefone</TableHead>
+                  <TableHead className="whitespace-nowrap">Email</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Compradas</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Vinculadas</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Tamanhos</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Pagamentos</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Status</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
 
-            <TableBody>
-              {data.map((row) => {
-                const name = exhibitorDisplayName(row)
+              <TableBody>
+                {data.map((row) => {
+                  const name = exhibitorDisplayName(row)
 
-                const purchased = row.stallsQtyPurchased
-                const linked = row.stallsQtyLinked
-                const complete = purchased > 0 && linked >= purchased
-                const linkedTone = complete ? "success" : linked > 0 ? "warn" : "neutral"
+                  const purchased = row.stallsQtyPurchased
+                  const linked = row.stallsQtyLinked
+                  const complete = purchased > 0 && linked >= purchased
+                  const linkedTone = complete ? "success" : linked > 0 ? "warn" : "neutral"
 
-                const sizesLabel = sizesLabelFromPurchases(row.purchasesPayments)
-                const sizesTooltipLines = sizesLinesFromPurchases(row.purchasesPayments)
+                  const sizesLabel = sizesLabelFromPurchases(row.purchasesPayments)
+                  const sizesTooltipLines = sizesLinesFromPurchases(row.purchasesPayments)
 
-                const phone = row.owner.phone?.trim() || "—"
-                const email = row.owner.email?.trim() || "—"
+                  const phone = row.owner.phone?.trim() || "—"
+                  const email = row.owner.email?.trim() || "—"
 
-                const p = row.payment
-                const hasPayment = !!p
-                const paymentsLabel = !p ? "—" : `${formatMoneyBRLFromCents(p.paidCents)} / ${formatMoneyBRLFromCents(p.totalCents)}`
-                const paymentsTone = paymentTone(p?.status)
+                  const p = row.payment
+                  const hasPayment = !!p
+                  const paymentsLabel =
+                    !p ? "—" : `${formatMoneyBRLFromCents(p.paidCents)} / ${formatMoneyBRLFromCents(p.totalCents)}`
+                  const paymentsTone = paymentTone(p?.status)
 
-                return (
-                  <TableRow key={row.ownerFairId} className="transition hover:bg-muted/30">
-                    <TableCell className="min-w-0">
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">
-                          {name}{" "}
-                          <span className="text-muted-foreground font-normal">{row.owner.personType}</span>
+                  return (
+                    <TableRow key={row.ownerFairId} className="transition hover:bg-muted/30">
+                      <TableCell className="min-w-0">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">
+                            {name}{" "}
+                            <span className="text-muted-foreground font-normal whitespace-nowrap">
+                              {row.owner.personType}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    </TableCell>
+                      </TableCell>
 
-                    <TableCell className="font-mono text-sm text-muted-foreground truncate">
-                      {row.owner.document ?? "—"}
-                    </TableCell>
+                      <TableCell className="font-mono text-sm text-muted-foreground truncate whitespace-nowrap">
+                        {row.owner.document ?? "—"}
+                      </TableCell>
 
-                    <TableCell className="text-sm text-muted-foreground">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Phone className="h-4 w-4 opacity-70 shrink-0" />
-                        <span className="truncate">{phone}</span>
-                      </div>
-                    </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Phone className="h-4 w-4 opacity-70 shrink-0" />
+                          <span className="truncate whitespace-nowrap">{phone}</span>
+                        </div>
+                      </TableCell>
 
-                    <TableCell className="text-sm text-muted-foreground">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Mail className="h-4 w-4 opacity-70 shrink-0" />
-                        <span className="truncate">{email}</span>
-                      </div>
-                    </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Mail className="h-4 w-4 opacity-70 shrink-0" />
+                          <span className="truncate whitespace-nowrap">{email}</span>
+                        </div>
+                      </TableCell>
 
-                    <TableCell className="text-center">
-                      <Chip
-                        icon={<ShoppingBag className="h-3.5 w-3.5" />}
-                        label={`${purchased}`}
-                        tooltipTitle="Barracas compradas"
-                        tooltipLines={[`Total comprado nesta feira: ${purchased}`]}
-                      />
-                    </TableCell>
+                      <TableCell className="text-center">
+                        <Chip
+                          icon={<ShoppingBag className="h-3.5 w-3.5" />}
+                          label={`${purchased}`}
+                          tooltipTitle="Barracas compradas"
+                          tooltipLines={[`Total comprado nesta feira: ${purchased}`]}
+                        />
+                      </TableCell>
 
-                    <TableCell className="text-center">
-                      <Chip
-                        icon={<Link2 className="h-3.5 w-3.5" />}
-                        label={`${linked}/${purchased}`}
-                        tooltipTitle="Barracas vinculadas"
-                        tooltipLines={[
-                          `Vinculadas: ${linked}`,
-                          `Compradas: ${purchased}`,
-                          complete ? "✅ Expositor já vinculou tudo." : "⏳ Ainda faltam vínculos.",
-                        ]}
-                        tone={linkedTone}
-                      />
-                    </TableCell>
+                      <TableCell className="text-center">
+                        <Chip
+                          icon={<Link2 className="h-3.5 w-3.5" />}
+                          label={`${linked}/${purchased}`}
+                          tooltipTitle="Barracas vinculadas"
+                          tooltipLines={[
+                            `Vinculadas: ${linked}`,
+                            `Compradas: ${purchased}`,
+                            complete ? "✅ Expositor já vinculou tudo." : "⏳ Ainda faltam vínculos.",
+                          ]}
+                          tone={linkedTone}
+                        />
+                      </TableCell>
 
-                    <TableCell className="text-center">
-                      <Chip
-                        icon={<Ruler className="h-3.5 w-3.5" />}
-                        label={sizesLabel}
-                        tooltipTitle="Tamanhos comprados"
-                        tooltipLines={sizesTooltipLines}
-                      />
-                    </TableCell>
+                      <TableCell className="text-center">
+                        <Chip
+                          icon={<Ruler className="h-3.5 w-3.5" />}
+                          label={sizesLabel}
+                          tooltipTitle="Tamanhos comprados"
+                          tooltipLines={sizesTooltipLines}
+                        />
+                      </TableCell>
 
-                    <TableCell className="text-center">
-                      <Chip
-                        icon={<CreditCard className="h-3.5 w-3.5" />}
-                        label={paymentsLabel}
-                        tooltipTitle="Pagamentos"
-                        tooltipLines={paymentLines(row)}
-                        tone={paymentsTone}
-                        asButton={hasPayment}
-                        onClick={() => handleOpenPayments(row)}
-                        className={!hasPayment ? "opacity-70" : ""}
-                      />
-                    </TableCell>
+                      <TableCell className="text-center">
+                        <Chip
+                          icon={<CreditCard className="h-3.5 w-3.5" />}
+                          label={paymentsLabel}
+                          tooltipTitle="Pagamentos"
+                          tooltipLines={paymentLines(row)}
+                          tone={paymentsTone}
+                          asButton={hasPayment}
+                          onClick={() => handleOpenPayments(row)}
+                          className={!hasPayment ? "opacity-70" : ""}
+                        />
+                      </TableCell>
 
-                    <TableCell className="text-center min-w-0">
-                      <StatusBadge status={row.status} />
-                    </TableCell>
+                      <TableCell className="text-center min-w-0">
+                        <StatusBadge status={row.status} />
+                      </TableCell>
 
-                    <TableCell className="text-center">
-                      <FairStallsRowActions
-                        row={row}
-                        onViewExhibitorDetails={handleViewExhibitorDetails}
-                        onChangeStatus={handleChangeStatus}
-                        onOpenPayments={handleOpenPayments}
-                        onOpenContract={handleOpenContract}
-                      />
+                      <TableCell className="text-center">
+                        <FairStallsRowActions
+                          row={row}
+                          onViewExhibitorDetails={handleViewExhibitorDetails}
+                          onChangeStatus={handleChangeStatus}
+                          onOpenPayments={handleOpenPayments}
+                          onOpenContract={handleOpenContract}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+
+                {!isError && data.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={10} className="py-10 text-center">
+                      <div className="text-sm font-medium">Nenhum expositor encontrado</div>
+                      <div className="text-xs text-muted-foreground">Tente alterar os filtros de busca.</div>
                     </TableCell>
                   </TableRow>
-                )
-              })}
-
-              {!isError && data.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={10} className="py-10 text-center">
-                    <div className="text-sm font-medium">Nenhum expositor encontrado</div>
-                    <div className="text-xs text-muted-foreground">Tente alterar os filtros de busca.</div>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                )}
+              </TableBody>
+            </Table>
+          </ResponsiveTableWrap>
         </div>
       )}
     </div>

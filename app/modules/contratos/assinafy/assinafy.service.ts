@@ -1,15 +1,3 @@
-/**
- * Contratos > Assinafy (upload PDF + gerar link de assinatura)
- *
- * Responsabilidade:
- * - Centralizar chamadas HTTP para o backend.
- * - Garantir que payloads e respostas estejam validados via Zod.
- *
- * Observação importante:
- * - Upload usa multipart/form-data (FormData).
- * - Link de assinatura usa JSON (POST normal).
- */
-
 import { api } from "@/app/shared/http/api"
 import {
   UploadContractPdfInputSchema,
@@ -23,13 +11,12 @@ import {
 } from "./assinafy.schema"
 
 /**
- * POST /contracts/:contractId/pdf
- * Envia o PDF e metadados necessários para validação no backend.
+ * POST /contracts/templates/:templateId/pdf
+ * Upload do PDF (multipart/form-data).
  *
- * Por que contractId na rota?
- * - Evita salvar PDF no contrato errado.
- * - Facilita versionamento e rastreabilidade.
- * - Dá previsibilidade (1 upload => 1 instância).
+ * - templateId vai na rota
+ * - contractId é opcional no body (FormData)
+ * - se não tiver contractId, backend cria/acha (OwnerFair 1:1)
  */
 export async function uploadContractPdf(params: {
   input: UploadContractPdfInput
@@ -40,10 +27,14 @@ export async function uploadContractPdf(params: {
   form.append("file", parsed.file, parsed.file.name)
   form.append("fairId", parsed.fairId)
   form.append("ownerId", parsed.ownerId)
-  form.append("templateId", parsed.templateId)
+
+  // ✅ só manda se existir (NUNCA mandar "")
+  if (parsed.contractId) {
+    form.append("contractId", parsed.contractId)
+  }
 
   const data = await api.post<UploadContractPdfResponse>(
-    `contracts/${parsed.contractId}/pdf`,
+    `contracts/templates/${parsed.templateId}/pdf`,
     form,
     {
       responseSchema: UploadContractPdfResponseSchema,

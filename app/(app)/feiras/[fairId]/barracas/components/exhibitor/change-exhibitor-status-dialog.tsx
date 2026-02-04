@@ -1,19 +1,5 @@
 "use client"
 
-/**
- * Modal para alteração de status do expositor (Owner ↔ Fair).
- * Responsabilidade:
- * - Exibir nome + documento do expositor (contexto antes de alterar)
- * - Permitir escolher um novo status (radio group)
- * - Salvar via mutation (PATCH) e fechar ao sucesso
- *
- * Ajustes desta iteração:
- * - Cards de status ficam 100% clicáveis (cursor-pointer + onClick)
- * - Card selecionado usa a “cor do status” (meta do getOwnerFairStatusMeta)
- * - Mantém RadioGroupItem para acessibilidade, mas o click principal é no card
- * - toasts de sucesso/erro padronizados
- */
-
 import * as React from "react"
 
 import {
@@ -42,17 +28,13 @@ import { useUpdateFairExhibitorStatusMutation } from "@/app/modules/fairs/exhibi
 
 import { toast } from "@/components/ui/toast"
 import { getErrorMessage } from "@/app/shared/utils/get-error-message"
-
-// ✅ Reaproveita as cores padronizadas do status (mesmas badges da tabela)
 import { getOwnerFairStatusMeta } from "../table/owner-fair-status-badges"
 import { Spinner } from "@/components/ui/spinner"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 type Props = {
-  /** Id da feira (fallback, caso a row não tenha fairId por algum motivo) */
   fairId: string
-  /** Linha do expositor na tabela */
   row: FairExhibitorRow | null
-  /** Controle de abertura do modal */
   open: boolean
   onOpenChange: (open: boolean) => void
 }
@@ -62,27 +44,32 @@ const STATUS_OPTIONS: Array<{
   title: string
   description: string
 }> = [
-    {
-      value: "SELECIONADO",
-      title: "Selecionado",
-      description: "Expositor aprovado/selecionado para a feira.",
-    },
-    {
-      value: "AGUARDANDO_PAGAMENTO",
-      title: "Aguardando pagamento",
-      description: "Expositor precisa concluir o pagamento.",
-    },
-    {
-      value: "AGUARDANDO_ASSINATURA",
-      title: "Aguardando assinatura",
-      description: "Pagamento ok, falta assinatura do contrato.",
-    },
-    {
-      value: "CONCLUIDO",
-      title: "Concluído",
-      description: "Fluxo finalizado (pago + assinado + vínculos completos).",
-    },
-  ]
+  {
+    value: "SELECIONADO",
+    title: "Selecionado",
+    description: "Expositor aprovado/selecionado para a feira.",
+  },
+  {
+    value: "AGUARDANDO_PAGAMENTO",
+    title: "Aguardando pagamento",
+    description: "Expositor precisa concluir o pagamento.",
+  },
+  {
+    value: "AGUARDANDO_ASSINATURA",
+    title: "Aguardando assinatura",
+    description: "Pagamento ok, falta assinatura do contrato.",
+  },
+  {
+    value: "AGUARDANDO_BARRACAS",
+    title: "Aguardando barracas",
+    description: "Contrato assinado, falta vincular/selecionar as barracas.",
+  },
+  {
+    value: "CONCLUIDO",
+    title: "Concluído",
+    description: "Pago + assinado + barracas vinculadas.",
+  },
+]
 
 export function ChangeExhibitorStatusDialog({ fairId, row, open, onOpenChange }: Props) {
   const effectiveFairId = row?.fairId ?? fairId
@@ -106,8 +93,7 @@ export function ChangeExhibitorStatusDialog({ fairId, row, open, onOpenChange }:
   }, [open, row?.ownerFairId])
 
   async function handleSave() {
-    if (!row) return
-    if (!hasChange) return
+    if (!row || !hasChange) return
 
     try {
       await mutation.mutateAsync({
@@ -117,7 +103,7 @@ export function ChangeExhibitorStatusDialog({ fairId, row, open, onOpenChange }:
 
       toast.success({
         title: "Status atualizado",
-        subtitle: `${name} (${document}) → ${ownerFairStatusLabel(nextStatus)}.`,
+        subtitle: `${name} → ${ownerFairStatusLabel(nextStatus)}`,
       })
 
       onOpenChange(false)
@@ -130,18 +116,27 @@ export function ChangeExhibitorStatusDialog({ fairId, row, open, onOpenChange }:
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[520px]">
-        <DialogHeader>
-          <DialogTitle>Alterar status do expositor</DialogTitle>
-          <DialogDescription>
-            Selecione o novo status e salve para atualizar a lista da feira.
-          </DialogDescription>
+    <Dialog  open={open} onOpenChange={onOpenChange}>
+      <DialogContent 
+        className={cn(
+          // ✅ grid resolve o bug do sticky e deixa 100% previsível no mobile
+          "grid  grid-rows-[auto,1fr,auto] gap-0",
+          
+          // garante que nada “vaze” fora do modal
+        )}
+      >
+        <div className="h-[90vh]  overflow-y-auto">
+
+        {/* HEADER */}
+        <DialogHeader className="pb-3">
+          <DialogTitle>Alterar status</DialogTitle>
+          <DialogDescription>Selecione o novo status do expositor.</DialogDescription>
         </DialogHeader>
 
-        {/* Contexto do expositor */}
-        <div className="rounded-xl border bg-muted/10 p-4">
-          <div className="flex flex-col gap-1">
+        {/* BODY (scroll) */}
+        <div className="">
+          {/* Contexto do expositor */}
+          <div className="rounded-xl border bg-muted/10 p-2">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-medium truncate">
@@ -151,7 +146,7 @@ export function ChangeExhibitorStatusDialog({ fairId, row, open, onOpenChange }:
                 <div className="text-xs text-muted-foreground font-mono truncate">{document}</div>
               </div>
 
-              <Badge variant="outline" className="rounded-full">
+              <Badge variant="outline" className="shrink-0">
                 Atual: {ownerFairStatusLabel(currentStatus)}
               </Badge>
             </div>
@@ -163,84 +158,91 @@ export function ChangeExhibitorStatusDialog({ fairId, row, open, onOpenChange }:
               </div>
             )}
           </div>
-        </div>
 
-        <Separator />
+          <Separator className="my-4" />
 
-        {/* Seleção de status */}
-        <div className="space-y-3">
-          <div className="text-sm font-medium">Novo status</div>
+          {/* Seleção de status */}
+          <div className="space-y-2 pb-6">
+            <div className="text-sm font-medium">Novo status</div>
 
-          <RadioGroup
-            value={nextStatus}
-            onValueChange={(v) => setNextStatus(v as OwnerFairStatus)}
-            className="space-y-2"
-            disabled={!row || isSaving}
-          >
-            {STATUS_OPTIONS.map((opt) => {
-              const selected = nextStatus === opt.value
-              const meta = getOwnerFairStatusMeta(opt.value)
+            <RadioGroup
+              value={nextStatus}
+              onValueChange={(v) => setNextStatus(v as OwnerFairStatus)}
+              className="space-y-2"
+              disabled={!row || isSaving}
+            >
+              {STATUS_OPTIONS.map((opt) => {
+                const selected = nextStatus === opt.value
+                const meta = getOwnerFairStatusMeta(opt.value)
 
-              return (
-                <div
-                  key={opt.value}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    if (!row || isSaving) return
-                    setNextStatus(opt.value)
-                  }}
-                  onKeyDown={(e) => {
-                    if (!row || isSaving) return
-                    if (e.key === "Enter" || e.key === " ") setNextStatus(opt.value)
-                  }}
-                  className={cn(
-                    "flex items-start gap-3 rounded-xl border p-3 transition",
-                    "cursor-pointer select-none",
-                    "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-                    selected ? "border-muted bg-muted/20" : "hover:bg-muted/10",
-                    // ✅ “cor do status” quando selecionado
-                    selected && meta.className,
-                  )}
-                >
-                  {/* Mantém o radio visível (acessibilidade), mas o card inteiro é clicável */}
-                  <RadioGroupItem value={opt.value} id={`status-${opt.value}`} />
+                return (
+                  <div
+                    key={opt.value}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      if (!row || isSaving) return
+                      setNextStatus(opt.value)
+                    }}
+                    onKeyDown={(e) => {
+                      if (!row || isSaving) return
+                      if (e.key === "Enter" || e.key === " ") setNextStatus(opt.value)
+                    }}
+                    className={cn(
+                      "flex items-start gap-3 rounded-xl border p-3 transition",
+                      "cursor-pointer select-none",
+                      "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                      selected ? meta.className : "hover:bg-muted/10"
+                    )}
+                  >
+                    <RadioGroupItem value={opt.value} id={`status-${opt.value}`} />
 
-                  <div className="min-w-0">
-                    <Label
-                      htmlFor={`status-${opt.value}`}
-                      className="text-sm font-medium cursor-pointer"
-                    >
-                      {opt.title}
-                    </Label>
-                    <div className="text-xs text-muted-foreground">{opt.description}</div>
+                    <div className="min-w-0">
+                      <Label htmlFor={`status-${opt.value}`} className="text-sm font-medium cursor-pointer">
+                        {opt.title}
+                      </Label>
+                      <div className="text-xs text-muted-foreground">{opt.description}</div>
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </RadioGroup>
+                )
+              })}
+            </RadioGroup>
 
-          {mutation.isError && (
-            <div className="text-xs text-destructive">
-              Não foi possível salvar. Verifique sua conexão e tente novamente.
-            </div>
-          )}
+            {mutation.isError && (
+              <div className="text-xs text-destructive">
+                Não foi possível salvar. Verifique sua conexão e tente novamente.
+              </div>
+            )}
+          </div>
         </div>
 
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
-            Cancelar
-          </Button>
+        {/* FOOTER (fixo, sem sticky) */}
+        <DialogFooter className="border-t bg-background pt-3">
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isSaving}
+              className="w-full sm:w-auto"
+            >
+              Cancelar
+            </Button>
 
-          <Button onClick={handleSave} disabled={!row || !hasChange || isSaving}>
-            {isSaving ? (
-              <span className="inline-flex items-center gap-2">
-                Salvando
-                <Spinner className="h-4 w-4" />
-              </span>
-            ) : "Salvar"}
-          </Button>
+            <Button onClick={handleSave} disabled={!row || !hasChange || isSaving} className="w-full sm:w-auto">
+              {isSaving ? (
+                <span className="inline-flex items-center gap-2">
+                  Salvando
+                  <Spinner className="h-4 w-4" />
+                </span>
+              ) : (
+                "Salvar"
+              )}
+            </Button>
+          </div>
         </DialogFooter>
+          
+        </div>
+
       </DialogContent>
     </Dialog>
   )
