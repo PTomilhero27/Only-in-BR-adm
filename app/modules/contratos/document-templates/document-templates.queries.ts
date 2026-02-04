@@ -33,8 +33,7 @@ export const documentTemplatesQueryKeys = {
   list: (filters?: ListDocumentTemplatesQuery) =>
     ["contracts", "document-templates", "list", { ...(filters ?? {}) }] as const,
 
-  byId: (id: string) =>
-    ["contracts", "document-templates", "byId", { id }] as const,
+  byId: (id: string) => ["contracts", "document-templates", "byId", { id }] as const,
 }
 
 /**
@@ -97,8 +96,7 @@ export function useCreateDocumentTemplateMutation() {
   const qc = useQueryClient()
 
   return useMutation({
-    mutationFn: (input: CreateDocumentTemplateInput) =>
-      createDocumentTemplate(input),
+    mutationFn: (input: CreateDocumentTemplateInput) => createDocumentTemplate(input),
 
     /**
      * Decisão: qualquer criação impacta listagens e combos.

@@ -5,6 +5,9 @@
  * - Centralizar chamadas HTTP para o backend (CRUD de templates).
  * - Validar entradas (inputs) com Zod antes de enviar.
  * - Validar saídas (responses) com Zod após receber.
+ *
+ * Decisão:
+ * - Normalizamos o "content" para evitar quebrar em templates legados (sem order).
  */
 import { api } from "@/app/shared/http/api"
 import {
@@ -18,6 +21,7 @@ import {
   type ListDocumentTemplatesSummaryResponse,
   UpdateDocumentTemplateInputSchema,
   type UpdateDocumentTemplateInput,
+  normalizeContractContent,
 } from "./document-templates.schema"
 
 function toQueryString(query?: ListDocumentTemplatesQuery) {
@@ -41,28 +45,89 @@ export async function listDocumentTemplates(
   return api.get(`document-templates${qs}`, ListDocumentTemplatesSummaryResponseSchema)
 }
 
+/**
+ * Busca template por ID (modo full).
+ *
+ * ✅ Importante:
+ * - Normalizamos "content" para garantir que blocks tenham order.
+ * - Isso evita crash no editor e no fluxo de salvar.
+ */
 export async function getDocumentTemplateById(id: string): Promise<DocumentTemplate> {
-  return api.get(`document-templates/${id}`, DocumentTemplateSchema)
+  // ✅ Tipamos a resposta para o TS saber que "content" existe.
+  const data = await api.get<DocumentTemplate>(`document-templates/${id}`)
+
+  const normalized: DocumentTemplate = {
+    ...data,
+    content: normalizeContractContent((data as any)?.content),
+  }
+
+  return DocumentTemplateSchema.parse(normalized)
 }
 
+/**
+ * Cria template.
+ *
+ * ✅ Importante:
+ * - Normalizamos o content antes de validar/enviar.
+ */
 export async function createDocumentTemplate(
   input: CreateDocumentTemplateInput,
 ): Promise<DocumentTemplate> {
-  const parsed = CreateDocumentTemplateInputSchema.parse(input)
-  const data = await api.post("document-templates", parsed)
-  return DocumentTemplateSchema.parse(data)
+  const safeInput: CreateDocumentTemplateInput = {
+    ...input,
+    content: normalizeContractContent(input?.content),
+  }
+
+  const parsed = CreateDocumentTemplateInputSchema.parse(safeInput)
+
+  // ✅ Tipamos a resposta
+  const data = await api.post<DocumentTemplate>("document-templates", parsed)
+
+  const normalized: DocumentTemplate = {
+    ...data,
+    content: normalizeContractContent((data as any)?.content),
+  }
+
+  return DocumentTemplateSchema.parse(normalized)
 }
 
+/**
+ * Atualiza template.
+ *
+ * ✅ Importante:
+ * - Se vier content, normalizamos antes do parse (evita order undefined).
+ */
 export async function updateDocumentTemplate(params: {
   id: string
   input: UpdateDocumentTemplateInput
 }): Promise<DocumentTemplate> {
-  const parsed = UpdateDocumentTemplateInputSchema.parse(params.input)
-  const data = await api.patch(`document-templates/${params.id}`, parsed)
-  return DocumentTemplateSchema.parse(data)
+  const safeInput: UpdateDocumentTemplateInput = {
+    ...params.input,
+    ...(params.input.content
+      ? { content: normalizeContractContent(params.input.content) }
+      : {}),
+  }
+
+  const parsed = UpdateDocumentTemplateInputSchema.parse(safeInput)
+
+  // ✅ Tipamos a resposta para o TS saber que "content" existe.
+  const data = await api.patch<DocumentTemplate>(`document-templates/${params.id}`, parsed)
+
+  const normalized: DocumentTemplate = {
+    ...data,
+    content: normalizeContractContent((data as any)?.content),
+  }
+
+  return DocumentTemplateSchema.parse(normalized)
 }
 
 export async function deleteDocumentTemplate(id: string): Promise<DocumentTemplate> {
-  const data = await api.delete(`document-templates/${id}`)
-  return DocumentTemplateSchema.parse(data)
+  const data = await api.delete<DocumentTemplate>(`document-templates/${id}`)
+
+  const normalized: DocumentTemplate = {
+    ...data,
+    content: normalizeContractContent((data as any)?.content),
+  }
+
+  return DocumentTemplateSchema.parse(normalized)
 }

@@ -9,12 +9,21 @@
  * Observação importante:
  * - A listagem usa "summary" (sem content).
  * - A edição usa "full" (com content).
+ *
+ * Decisão importante:
+ * - "order" pode vir ausente em templates legados (ou por bug de UI).
+ * - Portanto: aceitamos order opcional no parse e normalizamos antes de usar/salvar.
  */
 import { z } from "zod"
 
 export const DocumentTemplateStatusSchema = z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"])
 export type DocumentTemplateStatus = z.infer<typeof DocumentTemplateStatusSchema>
 
+/**
+ * JSON do Tiptap:
+ * - Mantemos permissivo com passthrough para suportar extensões futuras
+ *   sem quebrar o parse.
+ */
 export const TiptapJsonSchema = z
   .object({
     type: z.literal("doc"),
@@ -24,6 +33,10 @@ export const TiptapJsonSchema = z
 
 export type TiptapJson = z.infer<typeof TiptapJsonSchema>
 
+/**
+ * Item de uma cláusula.
+ * - number como string para suportar "1", "1.1", "I", "II", etc.
+ */
 export const ContractClauseItemSchema = z.object({
   id: z.string(),
   number: z.string().min(1),
@@ -32,19 +45,32 @@ export const ContractClauseItemSchema = z.object({
 })
 export type ContractClauseItem = z.infer<typeof ContractClauseItemSchema>
 
+/**
+ * Bloco do tipo "clause".
+ *
+ * ✅ Mudança:
+ * - order agora é opcional para permitir templates legados.
+ * - A normalização garante order antes de usar/salvar.
+ */
 export const ContractClauseBlockSchema = z.object({
   id: z.string(),
   type: z.literal("clause"),
-  order: z.number().int().min(1),
+  order: z.number().int().min(1).optional(),
   title: z.string().min(1),
   items: z.array(ContractClauseItemSchema).default([]),
 })
 export type ContractClauseBlock = z.infer<typeof ContractClauseBlockSchema>
 
+/**
+ * Bloco do tipo "freeText".
+ *
+ * ✅ Mudança:
+ * - order agora é opcional para permitir templates legados.
+ */
 export const ContractFreeTextBlockSchema = z.object({
   id: z.string(),
   type: z.literal("freeText"),
-  order: z.number().int().min(1),
+  order: z.number().int().min(1).optional(),
   richText: TiptapJsonSchema,
 })
 export type ContractFreeTextBlock = z.infer<typeof ContractFreeTextBlockSchema>
@@ -60,6 +86,34 @@ export const ContractContentSchema = z.object({
   blocks: z.array(ContractBlockSchema).default([]),
 })
 export type ContractContent = z.infer<typeof ContractContentSchema>
+
+/**
+ * ✅ Helper central:
+ * Normaliza o conteúdo garantindo:
+ * - todo block tem order
+ * - ordenação sem gaps/duplicados (re-sequencia por índice)
+ *
+ * Isso evita:
+ * - crash no Zod ao salvar
+ * - inconsistências na UI
+ */
+export function normalizeContractContent(input: unknown): ContractContent {
+  const parsed = ContractContentSchema.parse(input)
+
+  const withOrder = parsed.blocks.map((b, idx) => ({
+    ...b,
+    order: b.order ?? idx + 1,
+  }))
+
+  const resequenced = withOrder
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((b, idx) => ({ ...b, order: idx + 1 }))
+
+  return {
+    ...parsed,
+    blocks: resequenced,
+  }
+}
 
 export const DocumentTemplateSchema = z.object({
   id: z.string(),
