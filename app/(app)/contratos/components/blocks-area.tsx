@@ -1,34 +1,28 @@
-"use client";
+"use client"
 
 /**
  * BlocksArea
  *
  * Responsabilidade:
- * - Renderizar e editar (local) os blocos do contrato:
- *   - clause: cláusula com itens (incisos)
- *   - freeText: texto livre (richText)
+ * - Renderizar a área principal de blocos do template:
+ *   - Texto livre
+ *   - Cláusulas
+ * - Abrir dialogs de edição/criação (cláusula, incisos, texto livre)
+ * - Garantir consistência da estrutura (base.blocks)
  *
- * Implementado:
- * - Texto livre:
- *   - Menu (...) com Editar (abre modal) e Excluir
- *   - Card mostra apenas viewer (preview)
- *
- * - Cláusula:
- *   - Menu (...) com: Editar (inteligente), Adicionar inciso, Excluir
- *   - Editar (inteligente):
- *     - sem incisos => abre ClauseDialog direto
- *     - com incisos => abre modal de escolha (Editar cláusula | Editar incisos)
- *   - Editar incisos usa IncisosDialog preenchido e renumera ao salvar
- *   - Adicionar inciso abre IncisosDialog começando em order.(len+1) e renumera tudo ao salvar
+ * Importante:
+ * - O número "humano" da cláusula (CLÁUSULA 1, 2, 3...) não pode depender do índice do array,
+ *   porque existem blocos freeText entre as cláusulas.
+ * - Por isso, calculamos `humanClauseOrder` contando apenas blocos do tipo "clause".
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react"
 
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 
-import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
 
 import {
   DropdownMenu,
@@ -36,153 +30,183 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@/components/ui/dropdown-menu"
 
-import { ClauseDialog } from "./clause-dialog";
-import { EditClauseOrIncisosDialog } from "./edit-clause-or-incisos-dialog";
-import { IncisosDialog, type IncisoDraft } from "./inciso-dialog";
-import { FreeTextDialog } from "./free-text-dialog";
-import { RichTextViewer } from "./rich-text-viewer";
-import { EMPTY_RICH_TEXT, type RichTextJson } from "./rich-text-editor";
+import { ClauseDialog } from "./clause-dialog"
+import { EditClauseOrIncisosDialog } from "./edit-clause-or-incisos-dialog"
+import { IncisosDialog, type IncisoDraft } from "./inciso-dialog"
+import { FreeTextDialog } from "./free-text-dialog"
+import { RichTextViewer } from "./rich-text-viewer"
+
+import { createEmptyRichText, type RichTextJson } from "./rich-text-editor"
+
+import { validatePlaceholders } from "@/app/modules/contratos/hooks/rich-text-placeholders"
 
 function ensureBase(content: any) {
-  return content && typeof content === "object"
-    ? content
-    : { version: 1, blocks: [] };
+  return content && typeof content === "object" ? content : { version: 1, blocks: [] }
 }
 
 function extractHumanClauseTitle(fullTitle: string) {
-  const parts = fullTitle.split("–").map((s) => s.trim());
-  if (parts.length >= 2) return parts.slice(1).join(" – ");
-  return fullTitle.trim();
+  const parts = fullTitle.split("–").map((s) => s.trim())
+  if (parts.length >= 2) return parts.slice(1).join(" – ")
+  return fullTitle.trim()
 }
 
 function buildClauseTitle(order: number, humanTitle: string) {
-  return `CLÁUSULA ${order} – ${humanTitle.trim()}`;
+  return `CLÁUSULA ${order} – ${humanTitle.trim()}`
 }
 
+/**
+ * Renumera incisos sempre com base na ordem humana da cláusula.
+ */
 function renumberIncisos(
-  clauseOrder: number,
+  humanClauseOrder: number,
   items: Array<{ id: string; richText: any }>,
 ) {
   return items.map((it, idx) => ({
     id: it.id,
-    number: `${clauseOrder}.${idx + 1}`,
+    number: `${humanClauseOrder}.${idx + 1}`,
     richText: it.richText,
-  }));
+  }))
+}
+
+function PlaceholderBadges({ value }: { value: RichTextJson | undefined }) {
+  const items = useMemo(() => validatePlaceholders(value), [value])
+  if (!items.length) return null
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {items.map((v) => (
+        <Badge
+          key={v.raw}
+          variant="outline"
+          className={
+            v.isValid
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-rose-200 bg-rose-50 text-rose-700"
+          }
+          title={
+            v.isValid
+              ? `OK: ${v.label ?? v.key}`
+              : "Placeholder inválido (não existe no catálogo)"
+          }
+        >
+          {v.raw}
+        </Badge>
+      ))}
+    </div>
+  )
 }
 
 export function BlocksArea(props: {
-  disabled: boolean;
-  content: any;
-  onChange: (nextContent: any) => void;
+  disabled: boolean
+  content: any
+  onChange: (nextContent: any) => void
 }) {
-  const { disabled, content, onChange } = props;
+  const { disabled, content, onChange } = props
 
-  const base = ensureBase(content);
-  const blocks = base.blocks ?? [];
+  const base = ensureBase(content)
+  const blocks = base.blocks ?? []
 
   const [editClauseTarget, setEditClauseTarget] = useState<{
-    clauseId: string;
-    titleDraft: string;
-  } | null>(null);
+    clauseId: string
+    titleDraft: string
+  } | null>(null)
 
   const [editChoiceTarget, setEditChoiceTarget] = useState<{
-    clauseId: string;
-  } | null>(null);
+    clauseId: string
+  } | null>(null)
 
   const [editIncisosTarget, setEditIncisosTarget] = useState<{
-    clauseId: string;
-    clauseOrder: number;
-    startNumber: string;
-    initialItems: IncisoDraft[];
-  } | null>(null);
+    clauseId: string
+    humanClauseOrder: number
+    startNumber: string
+    initialItems: IncisoDraft[]
+  } | null>(null)
 
   const [addIncisosTarget, setAddIncisosTarget] = useState<{
-    clauseId: string;
-    clauseOrder: number;
-    startNumber: string;
-  } | null>(null);
+    clauseId: string
+    humanClauseOrder: number
+    startNumber: string
+  } | null>(null)
 
-  // ✅ Texto livre: alvo do modal de edição
   const [editFreeTextTarget, setEditFreeTextTarget] = useState<{
-    blockId: string;
-    initialValue: RichTextJson;
-  } | null>(null);
+    blockId: string
+    initialValue: RichTextJson
+  } | null>(null)
 
   function updateBlocks(nextBlocks: any[]) {
-    onChange({ ...base, blocks: nextBlocks });
+    onChange({ ...base, blocks: nextBlocks })
   }
 
   function removeBlock(idx: number) {
-    const next = structuredClone(blocks);
-    next.splice(idx, 1);
-    updateBlocks(next);
+    const next = structuredClone(blocks)
+    next.splice(idx, 1)
+    updateBlocks(next)
   }
 
-  function removeInciso(clauseId: string, incisoId: string) {
-    const next = structuredClone(blocks);
-    const clause = next.find(
-      (b: any) => b.type === "clause" && b.id === clauseId,
-    );
-    if (!clause) return;
-
-    clause.items = (clause.items ?? []).filter((it: any) => it.id !== incisoId);
-
-    clause.items = renumberIncisos(
-      clause.order,
-      clause.items.map((it: any) => ({ id: it.id, richText: it.richText })),
-    );
-
-    updateBlocks(next);
+  /**
+   * Retorna o número "humano" da cláusula, ignorando freeText.
+   * Ex.: se houver freeText no meio, ainda assim as cláusulas serão 1,2,3...
+   */
+  function getHumanClauseOrder(clauseId: string): number {
+    const clausesOnly = blocks.filter((b: any) => b.type === "clause")
+    const index = clausesOnly.findIndex((c: any) => c.id === clauseId)
+    return index >= 0 ? index + 1 : 1
   }
 
   function openEditClause(clause: any) {
     setEditClauseTarget({
       clauseId: clause.id,
       titleDraft: extractHumanClauseTitle(clause.title ?? ""),
-    });
+    })
   }
 
   function saveEditClause() {
-    if (!editClauseTarget) return;
+    if (!editClauseTarget) return
+    const humanTitle = editClauseTarget.titleDraft.trim()
+    if (!humanTitle) return
 
-    const humanTitle = editClauseTarget.titleDraft.trim();
-    if (!humanTitle) return;
-
-    const next = structuredClone(blocks);
+    const next = structuredClone(blocks)
     const clause = next.find(
       (b: any) => b.type === "clause" && b.id === editClauseTarget.clauseId,
-    );
-    if (!clause) return;
+    )
+    if (!clause) return
 
-    clause.title = buildClauseTitle(clause.order, humanTitle);
+    // ✅ título usa a ordem humana recalculada (não depende do idx do array)
+    const humanOrder = getHumanClauseOrder(clause.id)
+    clause.title = buildClauseTitle(humanOrder, humanTitle)
 
-    updateBlocks(next);
-    setEditClauseTarget(null);
+    updateBlocks(next)
+    setEditClauseTarget(null)
   }
 
   function handleEditAction(clause: any) {
-    const items = clause.items ?? [];
+    const items = clause.items ?? []
     if (items.length === 0) {
-      openEditClause(clause);
-      return;
+      openEditClause(clause)
+      return
     }
-    setEditChoiceTarget({ clauseId: clause.id });
+    setEditChoiceTarget({ clauseId: clause.id })
   }
 
+  /**
+   * ✅ Adicionar inciso:
+   * - startNumber deve usar a ordem humana da cláusula, não o block.order nem idx.
+   */
   function handleAddIncisosAction(clause: any) {
-    const len = clause.items?.length ?? 0;
-    const startNumber = `${clause.order}.${len + 1}`;
+    const humanClauseOrder = getHumanClauseOrder(clause.id)
+    const len = clause.items?.length ?? 0
+    const startNumber = `${humanClauseOrder}.${len + 1}`
 
     setAddIncisosTarget({
       clauseId: clause.id,
-      clauseOrder: clause.order,
+      humanClauseOrder,
       startNumber,
-    });
+    })
   }
 
-  const hasBlocks = (blocks?.length ?? 0) > 0;
+  const hasBlocks = (blocks?.length ?? 0) > 0
 
   if (!hasBlocks) {
     return (
@@ -192,7 +216,7 @@ export function BlocksArea(props: {
           Use os botões acima para adicionar cláusulas e textos livres.
         </p>
       </Card>
-    );
+    )
   }
 
   return (
@@ -200,23 +224,21 @@ export function BlocksArea(props: {
       {blocks.map((block: any, idx: number) => {
         /**
          * -------------------------
-         * Texto livre (viewer + modal)
+         * Texto livre
          * -------------------------
          */
         if (block.type === "freeText") {
           return (
-            <Card key={block.id ?? idx} className="space-y-3 p-4">
-              <div className="flex items-start justify-between gap-3">
+            <Card key={block.id ?? idx} className="gap-0 p-4">
+              <div className="flex items-start justify-between">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">Texto livre</Badge>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                    Texto livre
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    Texto livre (edite pelo menu)
-                  </div>
+
+                  <PlaceholderBadges value={block.richText} />
                 </div>
 
-                {/* Menu ... */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -233,12 +255,16 @@ export function BlocksArea(props: {
                     <DropdownMenuItem
                       className="gap-2"
                       disabled={disabled}
-                      onClick={() =>
+                      onClick={() => {
+                        const initial = block.richText
+                          ? structuredClone(block.richText)
+                          : createEmptyRichText()
+
                         setEditFreeTextTarget({
                           blockId: block.id,
-                          initialValue: block.richText ?? EMPTY_RICH_TEXT,
+                          initialValue: initial,
                         })
-                      }
+                      }}
                     >
                       <Pencil className="h-4 w-4" />
                       Editar texto
@@ -258,11 +284,9 @@ export function BlocksArea(props: {
                 </DropdownMenu>
               </div>
 
-              <div className="rounded-md border p-3">
-                <RichTextViewer value={block.richText} />
-              </div>
+              <RichTextViewer value={block.richText} />
             </Card>
-          );
+          )
         }
 
         /**
@@ -271,22 +295,19 @@ export function BlocksArea(props: {
          * -------------------------
          */
         if (block.type === "clause") {
-          const items = block.items ?? [];
+          const items = block.items ?? []
 
           return (
-            <Card key={block.id ?? idx} className="space-y-3 p-4">
+            <Card key={block.id ?? idx} className="gap-0 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline">Cláusula</Badge>
-                    <div className="text-sm font-medium">{block.title}</div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Incisos: {items.length}
+                    <div className="text-sm font-extrabold tracking-tight text-zinc-900">
+                      {block.title}
+                    </div>
                   </div>
                 </div>
 
-                {/* Menu ... */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -335,44 +356,25 @@ export function BlocksArea(props: {
               {/* Incisos */}
               <div className="space-y-3">
                 {items.map((it: any) => (
-                  <div key={it.id} className="rounded-md border p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="text-sm font-medium">{it.number}</div>
-
-                      {items.length > 1 && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          disabled={disabled}
-                          onClick={() => removeInciso(block.id, it.id)}
-                          title="Remover inciso"
-                        >
-                          <Trash2 className="h-4 w-4 text-muted-foreground" />
-                        </Button>
-                      )}
-                    </div>
-
-                    <div className="mt-2">
-                      <RichTextViewer value={it.richText} />
-                    </div>
+                  <div key={it.id} className="flex items-baseline gap-3 flex-row">
+                    <div className="text-sm font-medium pt-1">{it.number}</div>
+                    <RichTextViewer value={it.richText} />
                   </div>
                 ))}
               </div>
             </Card>
-          );
+          )
         }
 
         return (
           <Card key={block.id ?? idx} className="p-4">
             <div className="text-sm font-medium">Bloco desconhecido</div>
-            <div className="text-xs text-muted-foreground">
-              type: {String(block.type)}
-            </div>
+            <div className="text-xs text-muted-foreground">type: {String(block.type)}</div>
           </Card>
-        );
+        )
       })}
 
-      {/* ✅ Modal editar Texto Livre */}
+      {/* Modal editar Texto Livre */}
       {editFreeTextTarget && (
         <FreeTextDialog
           open
@@ -380,62 +382,62 @@ export function BlocksArea(props: {
           initialValue={editFreeTextTarget.initialValue}
           onCancel={() => setEditFreeTextTarget(null)}
           onSave={(json) => {
-            const next = structuredClone(blocks);
+            const next = structuredClone(blocks)
             const target = next.find(
-              (b: any) =>
-                b.type === "freeText" && b.id === editFreeTextTarget.blockId,
-            );
-            if (!target) return;
+              (b: any) => b.type === "freeText" && b.id === editFreeTextTarget.blockId,
+            )
+            if (!target) return
 
-            target.richText = json;
-
-            updateBlocks(next);
-            setEditFreeTextTarget(null);
+            target.richText = json
+            updateBlocks(next)
+            setEditFreeTextTarget(null)
           }}
         />
       )}
 
-      {/* ✅ Modal de escolha (se há incisos) */}
+      {/* ✅ Modal de escolha (editar cláusula vs editar incisos) */}
       {editChoiceTarget &&
         (() => {
           const clause = blocks.find(
             (b: any) => b.type === "clause" && b.id === editChoiceTarget.clauseId,
-          );
-          if (!clause) return null;
+          )
+          if (!clause) return null
 
-          const items = clause.items ?? [];
+          const items = clause.items ?? []
 
           return (
             <EditClauseOrIncisosDialog
               open
               onOpenChange={(v) => {
-                if (!v) setEditChoiceTarget(null);
+                if (!v) setEditChoiceTarget(null)
               }}
               onEditClause={() => {
-                setEditChoiceTarget(null);
-                openEditClause(clause);
+                setEditChoiceTarget(null)
+                openEditClause(clause)
               }}
               onEditIncisos={() => {
-                const startNumber = `${clause.order}.1`;
+                // ✅ ordem humana correta, ignorando freeText
+                const humanClauseOrder = getHumanClauseOrder(clause.id)
+                const startNumber = `${humanClauseOrder}.1`
 
                 setEditIncisosTarget({
                   clauseId: clause.id,
-                  clauseOrder: clause.order,
+                  humanClauseOrder,
                   startNumber,
                   initialItems: items.map((it: any) => ({
                     id: it.id,
                     number: it.number,
                     richText: it.richText,
                   })),
-                });
+                })
 
-                setEditChoiceTarget(null);
+                setEditChoiceTarget(null)
               }}
             />
-          );
+          )
         })()}
 
-      {/* ✅ Modal de edição de incisos (preenchido) */}
+      {/* ✅ Modal edição de incisos */}
       {editIncisosTarget && (
         <IncisosDialog
           open
@@ -443,65 +445,65 @@ export function BlocksArea(props: {
           initialItems={editIncisosTarget.initialItems}
           onCancel={() => setEditIncisosTarget(null)}
           onSave={(nextItems) => {
-            const next = structuredClone(blocks);
+            const next = structuredClone(blocks)
             const clause = next.find(
               (b: any) => b.type === "clause" && b.id === editIncisosTarget.clauseId,
-            );
-            if (!clause) return;
+            )
+            if (!clause) return
 
+            // ✅ renumera usando a ordem humana
             clause.items = renumberIncisos(
-              editIncisosTarget.clauseOrder,
+              editIncisosTarget.humanClauseOrder,
               nextItems.map((it) => ({ id: it.id, richText: it.richText })),
-            );
+            )
 
-            updateBlocks(next);
-            setEditIncisosTarget(null);
+            updateBlocks(next)
+            setEditIncisosTarget(null)
           }}
         />
       )}
 
-      {/* ✅ Modal para ADICIONAR novos incisos */}
+      {/* ✅ Modal adicionar incisos */}
       {addIncisosTarget && (
         <IncisosDialog
           open
           startNumber={addIncisosTarget.startNumber}
           onCancel={() => setAddIncisosTarget(null)}
           onSave={(newItems) => {
-            const next = structuredClone(blocks);
+            const next = structuredClone(blocks)
             const clause = next.find(
               (b: any) => b.type === "clause" && b.id === addIncisosTarget.clauseId,
-            );
-            if (!clause) return;
+            )
+            if (!clause) return
 
-            const existing = clause.items ?? [];
+            const existing = clause.items ?? []
 
             const combined = [
               ...existing.map((it: any) => ({ id: it.id, richText: it.richText })),
               ...newItems.map((it) => ({ id: it.id, richText: it.richText })),
-            ];
+            ]
 
-            clause.items = renumberIncisos(addIncisosTarget.clauseOrder, combined);
+            // ✅ renumera usando a ordem humana correta
+            clause.items = renumberIncisos(addIncisosTarget.humanClauseOrder, combined)
 
-            updateBlocks(next);
-            setAddIncisosTarget(null);
+            updateBlocks(next)
+            setAddIncisosTarget(null)
           }}
         />
       )}
 
-      {/* ✅ Modal editar cláusula */}
+      {/* Modal editar cláusula */}
       {editClauseTarget && (
         <ClauseDialog
           open
           title={editClauseTarget.titleDraft}
           onTitleChange={(v) =>
-            setEditClauseTarget((prev) =>
-              prev ? { ...prev, titleDraft: v } : prev,
-            )
+            setEditClauseTarget((prev) => (prev ? { ...prev, titleDraft: v } : prev))
           }
           onCancel={() => setEditClauseTarget(null)}
           onSave={saveEditClause}
         />
       )}
     </div>
-  );
+  )
 }

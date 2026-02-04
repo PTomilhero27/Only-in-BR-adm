@@ -44,7 +44,7 @@ import { toast } from "@/components/ui/toast"
 import { getErrorMessage } from "@/app/shared/utils/get-error-message"
 
 // ✅ Reaproveita as cores padronizadas do status (mesmas badges da tabela)
-import { getOwnerFairStatusMeta } from "./owner-fair-status-badges"
+import { getOwnerFairStatusMeta } from "../table/owner-fair-status-badges"
 import { Spinner } from "@/components/ui/spinner"
 
 type Props = {

@@ -1,23 +1,7 @@
 "use client"
 
-/**
- * Tabela de expositores vinculados (por feira).
- * Responsabilidade:
- * - Visualização rápida de compra vs vínculo (compradas/vinculadas/tamanhos)
- * - Pagamentos (básico na linha + modal detalhado)
- * - Status do expositor + ações
- * - Estado vazio e skeleton consistentes
- *
- * Decisões desta iteração:
- * - Nova coluna "Pagamentos" (paidCount/installmentsCount)
- * - Chip de pagamento é clicável:
- *   - desktop: tooltip orienta clique
- *   - mobile: clique direto abre modal
- * - O mesmo modal é acessível via menu "..." (opção Pagamentos)
- */
-
 import * as React from "react"
-import type { FairExhibitorRow, OwnerFairStatus } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
+import type { FairExhibitorRow, OwnerFairStatus, StallSize } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
 import { exhibitorDisplayName, ownerFairStatusLabel, stallSizeLabel } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/table/table"
@@ -30,9 +14,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 import { Mail, Phone, Link2, ShoppingBag, Ruler, CreditCard } from "lucide-react"
 import { getOwnerFairStatusMeta } from "./owner-fair-status-badges"
-import { ChangeExhibitorStatusDialog } from "./change-exhibitor-status-dialog"
-import { FairExhibitorDetailsDialog } from "./fair-exhibitor-details-dialog"
-import { ExhibitorPaymentsDialog } from "./exhibitor-payments-dialog"
+import { FairExhibitorContractDialog } from "../contratos/fair-exhibitor-contract-dialog"
+import { ChangeExhibitorStatusDialog } from "../exhibitor/change-exhibitor-status-dialog"
+import { FairExhibitorDetailsDialog } from "../exhibitor/fair-exhibitor-details-dialog"
+import { ExhibitorPaymentsDialog } from "../pagamentos/exhibitor-payments-dialog"
 
 type Props = {
   fairId: string
@@ -44,36 +29,88 @@ type Props = {
 function TableColGroup() {
   return (
     <colgroup>
-      <col style={{ width: "10%" }} />
-      <col style={{ width: "10%" }} />
+      <col style={{ width: "16%" }} />
       <col style={{ width: "12%" }} />
       <col style={{ width: "14%" }} />
+      <col style={{ width: "18%" }} />
       <col style={{ width: "7%" }} />
-      <col style={{ width: "8%" }} />
-      <col style={{ width: "8%" }} />
       <col style={{ width: "9%" }} />
+      <col style={{ width: "10%" }} />
+      <col style={{ width: "10%" }} />
+      <col style={{ width: "8%" }} />
       <col style={{ width: "6%" }} />
-      <col style={{ width: "4%" }} />
     </colgroup>
   )
 }
 
+function formatMoneyBRLFromCents(cents?: number | null) {
+  if (cents === null || cents === undefined) return "—"
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100)
+}
 
-function sizesLines(slots: FairExhibitorRow["stallSlots"]) {
-  if (!slots?.length) return ["Nenhum tamanho informado."]
-  return slots.filter((s) => (s.qty ?? 0) > 0).map((s) => `${stallSizeLabel(s.stallSize)} · ${s.qty}`)
+function paymentStatusLabel(status?: string | null) {
+  switch (status) {
+    case "PAID":
+      return "Pago"
+    case "PARTIALLY_PAID":
+      return "Parcial"
+    case "OVERDUE":
+      return "Atrasado"
+    case "PENDING":
+      return "Pendente"
+    case "CANCELLED":
+      return "Cancelado"
+    default:
+      return status ?? "—"
+  }
+}
+
+function paymentTone(status?: string | null): "neutral" | "success" | "warn" | "danger" {
+  switch (status) {
+    case "PAID":
+      return "success"
+    case "PARTIALLY_PAID":
+      return "warn"
+    case "OVERDUE":
+      return "danger"
+    default:
+      return "neutral"
+  }
+}
+
+function groupPurchasedSizes(purchases: FairExhibitorRow["purchasesPayments"]) {
+  const map = new Map<StallSize, number>()
+  for (const p of purchases ?? []) {
+    const prev = map.get(p.stallSize) ?? 0
+    map.set(p.stallSize, prev + (p.qty ?? 0))
+  }
+  return Array.from(map.entries())
+    .filter(([, qty]) => qty > 0)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+}
+
+function sizesLinesFromPurchases(purchases: FairExhibitorRow["purchasesPayments"]) {
+  const grouped = groupPurchasedSizes(purchases)
+  if (grouped.length === 0) return ["Nenhum tamanho informado."]
+
+  return grouped.map(([size, qty]) => `${stallSizeLabel(size)} · ${qty}`)
+}
+
+function sizesLabelFromPurchases(purchases: FairExhibitorRow["purchasesPayments"]) {
+  const grouped = groupPurchasedSizes(purchases)
+  if (grouped.length === 0) return "—"
+  return `${grouped.length} tipo(s)`
 }
 
 function paymentLines(row: FairExhibitorRow) {
   const p = row.payment
-  if (!p) return ["Plano não configurado."]
-  const next = p.nextDueDate ? new Intl.DateTimeFormat("pt-BR").format(new Date(p.nextDueDate)) : "—"
-  const due = p.dueDates?.length ? p.dueDates.map((d) => new Intl.DateTimeFormat("pt-BR").format(new Date(d))).join(" · ") : "—"
+  if (!p) return ["Sem dados de pagamento."]
+
   return [
-    `Status: ${p.status}`,
-    `Pagas: ${p.paidCount}/${p.installmentsCount}`,
-    `Próxima: ${next}`,
-    `Datas: ${due}`,
+    `Status: ${paymentStatusLabel(p.status)}`,
+    `Compras: ${p.purchasesCount}`,
+    `Pago: ${formatMoneyBRLFromCents(p.paidCents)}`,
+    `Total: ${formatMoneyBRLFromCents(p.totalCents)}`,
   ]
 }
 
@@ -101,16 +138,36 @@ function TableSkeleton() {
       <TableBody>
         {rows.map((_, idx) => (
           <TableRow key={idx} className="hover:bg-transparent">
-            <TableCell><Skeleton className="h-4 w-[180px]" /></TableCell>
-            <TableCell><Skeleton className="h-6 w-[140px] rounded-full" /></TableCell>
-            <TableCell><Skeleton className="h-4 w-[160px]" /></TableCell>
-            <TableCell><Skeleton className="h-4 w-[180px]" /></TableCell>
-            <TableCell className="text-center"><Skeleton className="mx-auto h-7 w-[70px] rounded-full" /></TableCell>
-            <TableCell className="text-center"><Skeleton className="mx-auto h-7 w-[86px] rounded-full" /></TableCell>
-            <TableCell className="text-center"><Skeleton className="mx-auto h-7 w-[110px] rounded-full" /></TableCell>
-            <TableCell className="text-center"><Skeleton className="mx-auto h-7 w-[120px] rounded-full" /></TableCell>
-            <TableCell className="text-center"><Skeleton className="mx-auto h-7 w-[110px] rounded-full" /></TableCell>
-            <TableCell className="text-center"><Skeleton className="mx-auto h-8 w-8 rounded-md" /></TableCell>
+            <TableCell>
+              <Skeleton className="h-4 w-[180px]" />
+            </TableCell>
+            <TableCell>
+              <Skeleton className="h-6 w-[140px] rounded-full" />
+            </TableCell>
+            <TableCell>
+              <Skeleton className="h-4 w-[160px]" />
+            </TableCell>
+            <TableCell>
+              <Skeleton className="h-4 w-[180px]" />
+            </TableCell>
+            <TableCell className="text-center">
+              <Skeleton className="mx-auto h-7 w-[70px] rounded-full" />
+            </TableCell>
+            <TableCell className="text-center">
+              <Skeleton className="mx-auto h-7 w-[86px] rounded-full" />
+            </TableCell>
+            <TableCell className="text-center">
+              <Skeleton className="mx-auto h-7 w-[110px] rounded-full" />
+            </TableCell>
+            <TableCell className="text-center">
+              <Skeleton className="mx-auto h-7 w-[160px] rounded-full" />
+            </TableCell>
+            <TableCell className="text-center">
+              <Skeleton className="mx-auto h-7 w-[110px] rounded-full" />
+            </TableCell>
+            <TableCell className="text-center">
+              <Skeleton className="mx-auto h-8 w-8 rounded-md" />
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -207,17 +264,17 @@ function StatusBadge({ status }: { status: OwnerFairStatus }) {
 }
 
 export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
-  // ✅ Modal de status
   const [statusOpen, setStatusOpen] = React.useState(false)
   const [statusRow, setStatusRow] = React.useState<FairExhibitorRow | null>(null)
 
-  // ✅ Modal de detalhes
   const [detailsOpen, setDetailsOpen] = React.useState(false)
   const [detailsRow, setDetailsRow] = React.useState<FairExhibitorRow | null>(null)
 
-  // ✅ Modal de pagamentos (novo)
   const [paymentsOpen, setPaymentsOpen] = React.useState(false)
   const [paymentsRow, setPaymentsRow] = React.useState<FairExhibitorRow | null>(null)
+
+  const [contractOpen, setContractOpen] = React.useState(false)
+  const [contractRow, setContractRow] = React.useState<FairExhibitorRow | null>(null)
 
   function handleChangeStatus(row: FairExhibitorRow) {
     setStatusRow(row)
@@ -234,9 +291,29 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
     setPaymentsOpen(true)
   }
 
+  function handleOpenContract(row: FairExhibitorRow) {
+    setContractRow(row)
+    setContractOpen(true)
+  }
+
+  function handleGenerateSignatureLink(args: { fairId: string; ownerFairId: string; contractId: string }) {
+    console.log("GERAR LINK (TODO backend):", args)
+  }
+
   return (
     <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
-      {/* Modal: troca de status */}
+      <FairExhibitorContractDialog
+        open={contractOpen}
+        onOpenChange={(open) => {
+          setContractOpen(open)
+          if (!open) setContractRow(null)
+        }}
+        fairId={fairId}
+        row={contractRow}
+        isGeneratingLink={false}
+        onGenerateSignatureLink={handleGenerateSignatureLink}
+      />
+
       <ChangeExhibitorStatusDialog
         fairId={fairId}
         row={statusRow}
@@ -247,7 +324,6 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
         }}
       />
 
-      {/* Modal: detalhes do expositor */}
       <FairExhibitorDetailsDialog
         open={detailsOpen}
         onOpenChange={(open) => {
@@ -258,7 +334,6 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
         fairId={fairId}
       />
 
-      {/* ✅ Modal: pagamentos (único e reutilizado) */}
       <ExhibitorPaymentsDialog
         open={paymentsOpen}
         onOpenChange={setPaymentsOpen}
@@ -266,8 +341,6 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
         ownerFairId={paymentsRow?.ownerFairId ?? null}
       />
 
-
-      {/* Cabeçalho */}
       <div className="flex flex-col gap-2 border-b px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-0.5">
           <div className="text-sm font-medium">Expositores vinculados</div>
@@ -314,26 +387,16 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
                 const complete = purchased > 0 && linked >= purchased
                 const linkedTone = complete ? "success" : linked > 0 ? "warn" : "neutral"
 
-                const sizesCount = row.stallSlots?.filter((s) => (s.qty ?? 0) > 0).length ?? 0
-                const sizesLabel = sizesCount === 0 ? "—" : `${sizesCount} tipo(s)`
+                const sizesLabel = sizesLabelFromPurchases(row.purchasesPayments)
+                const sizesTooltipLines = sizesLinesFromPurchases(row.purchasesPayments)
 
                 const phone = row.owner.phone?.trim() || "—"
                 const email = row.owner.email?.trim() || "—"
 
-                const payment = row.payment
-                const hasPayment = !!payment
-                const paymentsLabel = !payment ? "—" : `${payment.paidCount}/${payment.installmentsCount}`
-
-                const paymentsTone =
-                  !payment
-                    ? "neutral"
-                    : payment.status === "PAID"
-                      ? "success"
-                      : payment.status === "OVERDUE"
-                        ? "danger"
-                        : payment.status === "PARTIALLY_PAID"
-                          ? "warn"
-                          : "neutral"
+                const p = row.payment
+                const hasPayment = !!p
+                const paymentsLabel = !p ? "—" : `${formatMoneyBRLFromCents(p.paidCents)} / ${formatMoneyBRLFromCents(p.totalCents)}`
+                const paymentsTone = paymentTone(p?.status)
 
                 return (
                   <TableRow key={row.ownerFairId} className="transition hover:bg-muted/30">
@@ -392,18 +455,17 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
                         icon={<Ruler className="h-3.5 w-3.5" />}
                         label={sizesLabel}
                         tooltipTitle="Tamanhos comprados"
-                        tooltipLines={sizesLines(row.stallSlots)}
+                        tooltipLines={sizesTooltipLines}
                       />
                     </TableCell>
 
-                    {/* ✅ Pagamentos: chip clicável + tooltip */}
                     <TableCell className="text-center">
                       <Chip
                         icon={<CreditCard className="h-3.5 w-3.5" />}
                         label={paymentsLabel}
                         tooltipTitle="Pagamentos"
                         tooltipLines={paymentLines(row)}
-                        tone={paymentsTone as any}
+                        tone={paymentsTone}
                         asButton={hasPayment}
                         onClick={() => handleOpenPayments(row)}
                         className={!hasPayment ? "opacity-70" : ""}
@@ -420,6 +482,7 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
                         onViewExhibitorDetails={handleViewExhibitorDetails}
                         onChangeStatus={handleChangeStatus}
                         onOpenPayments={handleOpenPayments}
+                        onOpenContract={handleOpenContract}
                       />
                     </TableCell>
                   </TableRow>

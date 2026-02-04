@@ -1,14 +1,34 @@
 /**
- * Contratos do módulo "fairs/exhibitors" (painel).
+ * Contratos do módulo "fairs/exhibitors" (painel admin).
  * Motivo: validar payload com Zod e evitar contratos implícitos.
  *
- * Nesta etapa:
- * - O endpoint GET /fairs/:id/exhibitors devolve:
- *   - fair com capacidade (stallsCapacity/reserved/remaining)
- *   - items com resumo de pagamento (payment)
- * - Removemos paidAt do OwnerFair (fonte de verdade agora é o plano/parcelas)
+ * ✅ Atualizado para o novo financeiro por "compra" (OwnerFairPurchase) + histórico:
+ * - items[].payment agora é agregado por purchases (não por StallFair)
+ * - items[].purchasesPayments traz detalhe por compra e suas parcelas
+ * - items[].stallFairs traz barracas vinculadas com a compra consumida
+ * - actions financeiras:
+ *   - settle (atalho): marca/desfaz parcelas por purchaseId
+ *   - reschedule: muda vencimento (dueDate) de 1 parcela
+ *   - createPayment: registra pagamento parcial (histórico)
  */
 import { z } from "zod"
+
+/** =========================
+ * Helpers de datas
+ * ========================= */
+
+/**
+ * Date-only (YYYY-MM-DD) usado para vencimento/pagamento em telas administrativas,
+ * evitando bugs de timezone (o backend normaliza para 00:00Z).
+ */
+export const DateOnlySchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Data deve estar no formato YYYY-MM-DD.")
+export type DateOnly = z.infer<typeof DateOnlySchema>
+
+/** =========================
+ * ENUMS (domínio)
+ * ========================= */
 
 export const OwnerFairStatusSchema = z.enum([
   "SELECIONADO",
@@ -33,12 +53,13 @@ export type StallSize = z.infer<typeof StallSizeSchema>
 export const StallTypeSchema = z.enum(["OPEN", "CLOSED", "TRAILER"])
 export type StallType = z.infer<typeof StallTypeSchema>
 
-/**
- * Owner retornado no contexto de expositores da feira.
- * Decisão:
- * - Mantemos campos extras (address/pix/banco) para tooltips e detalhe rápido na tabela,
- *   evitando buscar isso em outra tela.
- */
+export const ContractTemplateStatusSchema = z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"])
+export type ContractTemplateStatus = z.infer<typeof ContractTemplateStatusSchema>
+
+/** =========================
+ * OWNER / EXHIBITOR (linha)
+ * ========================= */
+
 export const FairExhibitorOwnerSchema = z.object({
   id: z.string(),
   personType: z.enum(["PF", "PJ"]),
@@ -48,25 +69,18 @@ export const FairExhibitorOwnerSchema = z.object({
   email: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
 
-  addressFull: z.string().nullable().optional(),
-
-  bankAccount: z.string().nullable().optional(),
-  bankAccountType: z.string().nullable().optional(),
-  bankAgency: z.string().nullable().optional(),
-  bankName: z.string().nullable().optional(),
-  pixKey: z.string().nullable().optional(),
+  // ✅ o backend atual em listExhibitors seleciona só estes campos
+  // (se futuramente voltar a trazer endereço/banco, a gente reintroduz aqui)
 })
 export type FairExhibitorOwner = z.infer<typeof FairExhibitorOwnerSchema>
 
-export const FairExhibitorSlotSchema = z.object({
-  stallSize: StallSizeSchema,
-  qty: z.number(),
-  unitPriceCents: z.number(),
-})
-export type FairExhibitorSlot = z.infer<typeof FairExhibitorSlotSchema>
+/** =========================
+ * STALL (detalhe)
+ * ========================= */
 
 export const FairLinkedStallSchema = z.object({
   id: z.string(),
+  ownerId: z.string(),
   pdvName: z.string(),
   stallType: StallTypeSchema,
   stallSize: StallSizeSchema,
@@ -78,57 +92,172 @@ export const FairLinkedStallSchema = z.object({
 export type FairLinkedStall = z.infer<typeof FairLinkedStallSchema>
 
 /**
- * Parcela (para exibir no modal de pagamentos).
+ * Compra "resumida" que uma StallFair consumiu (para UI mostrar slot consumido).
  */
-export const FairPaymentInstallmentSchema = z.object({
-  number: z.number(),
-  dueDate: z.string().datetime(),
-  amountCents: z.number(),
-
-  /**
-   * Prisma:
-   * - paidAt pode ser null
-   * - paidAmountCents pode ser null
-   */
-  paidAt: z.string().datetime().nullable().optional(),
-  paidAmountCents: z.number().nullable().optional(),
+export const FairConsumedPurchaseSchema = z.object({
+  id: z.string(),
+  stallSize: StallSizeSchema,
+  unitPriceCents: z.number(),
+  qty: z.number(),
+  usedQty: z.number(),
+  status: OwnerFairPaymentStatusSchema,
 })
-export type FairPaymentInstallment = z.infer<typeof FairPaymentInstallmentSchema>
+export type FairConsumedPurchase = z.infer<typeof FairConsumedPurchaseSchema>
 
 /**
- * Resumo do plano de pagamento (para tabela e modal).
- *
- * Observação:
- * - installments pode vir (para modal) ou não (se no futuro quisermos payload menor).
- * - dueDates também pode ser omitido no MVP.
+ * Vínculo de barraca na feira (StallFair) com a compra consumida.
  */
-export const FairPaymentSummarySchema = z.object({
+export const FairStallFairItemSchema = z.object({
+  stallFairId: z.string(),
+  stallId: z.string(),
+  createdAt: z.string().datetime(),
+  stall: FairLinkedStallSchema,
+  purchase: FairConsumedPurchaseSchema.nullable(),
+})
+export type FairStallFairItem = z.infer<typeof FairStallFairItemSchema>
+
+/** =========================
+ * PAYMENTS (por compra)
+ * ========================= */
+
+/**
+ * Parcela (installment) da compra.
+ * Observação:
+ * - paidAt aqui é cache de "quitada" (pode ser null)
+ * - paidAmountCents é o somatório pago (cache)
+ */
+export const PurchaseInstallmentSchema = z.object({
+  id: z.string(),
+  number: z.number().int().positive(),
+  dueDate: z.string().datetime(),
+  amountCents: z.number().int().nonnegative(),
+
+  paidAt: z.string().datetime().nullable(),
+  paidAmountCents: z.number().int().nonnegative().nullable(),
+})
+export type PurchaseInstallment = z.infer<typeof PurchaseInstallmentSchema>
+
+/**
+ * Detalhe de pagamento por COMPRA (OwnerFairPurchase) para UI admin.
+ * Esse objeto já vem pré-processado no backend (`toPurchasePaymentSummary`).
+ */
+export const PurchasePaymentSummarySchema = z.object({
+  purchaseId: z.string(),
+  stallSize: StallSizeSchema,
+  qty: z.number(),
+  usedQty: z.number(),
+
+  unitPriceCents: z.number(),
+  totalCents: z.number(),
+
+  paidCents: z.number(),
+  paidAt: z.string().datetime().nullable(),
+
   status: OwnerFairPaymentStatusSchema,
 
-  totalCents: z.number(),
   installmentsCount: z.number(),
   paidCount: z.number(),
-
-  nextDueDate: z.string().datetime().nullable().optional(),
-
-  /**
-   * ✅ Flexível:
-   * - pode vir do backend como lista simples (se você montar)
-   * - ou pode não vir no MVP
-   */
-  dueDates: z.array(z.string().datetime()).optional(),
-
-  /**
-   * ✅ importante pra UI (badge / cor)
-   */
   overdueCount: z.number(),
+  nextDueDate: z.string().datetime().nullable(),
 
-  /**
-   * ✅ modal usa installments (quando vier)
-   */
-  installments: z.array(FairPaymentInstallmentSchema).optional(),
+  installments: z.array(PurchaseInstallmentSchema),
 })
-export type FairPaymentSummary = z.infer<typeof FairPaymentSummarySchema>
+export type PurchasePaymentSummary = z.infer<typeof PurchasePaymentSummarySchema>
+
+/**
+ * Pagamento agregado do expositor na feira (derivado das purchases).
+ * ⚠️ Esse é o objeto que o backend retorna hoje em `payment: aggregatedPayment`.
+ */
+export const AggregatedPaymentSchema = z.object({
+  status: OwnerFairPaymentStatusSchema,
+  totalCents: z.number(),
+  paidCents: z.number(),
+  purchasesCount: z.number(),
+})
+export type AggregatedPayment = z.infer<typeof AggregatedPaymentSchema>
+
+/** =========================
+ * CONTRACT SETTINGS (fair)
+ * ========================= */
+
+export const FairContractSettingsSchema = z
+  .object({
+    id: z.string(),
+    templateId: z.string(),
+    updatedAt: z.string().datetime(),
+    updatedByUserId: z.string().nullable().optional(),
+    template: z.object({
+      id: z.string(),
+      title: z.string(),
+      status: ContractTemplateStatusSchema,
+      isAddendum: z.boolean(),
+      updatedAt: z.string().datetime(),
+    }),
+  })
+  .nullable()
+export type FairContractSettings = z.infer<typeof FairContractSettingsSchema>
+
+/** =========================
+ * CONTRACT (item/exhibitor)
+ * ========================= */
+
+export const FairContractInstanceSchema = z.object({
+  id: z.string(),
+  templateId: z.string(),
+  addendumTemplateId: z.string().nullable(),
+
+  pdfPath: z.string().nullable(),
+
+  assinafyDocumentId: z.string().nullable(),
+  // obs: backend no listExhibitors não está retornando assinafySignerId no summary da instance
+  // então deixamos opcional/nullable pra evitar quebrar caso volte.
+  assinafySignerId: z.string().nullable().optional(),
+
+  signUrl: z.string().url().nullable().optional(),
+  signUrlExpiresAt: z.string().datetime().nullable().optional(),
+
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+})
+export type FairContractInstance = z.infer<typeof FairContractInstanceSchema>
+
+export const FairAddendumChoiceSchema = z.object({
+  id: z.string(),
+  templateId: z.string(),
+  templateTitle: z.string().nullable(),
+  templateStatus: ContractTemplateStatusSchema.nullable(),
+  templateVersionNumber: z.number(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+})
+export type FairAddendumChoice = z.infer<typeof FairAddendumChoiceSchema>
+
+export const FairExhibitorContractSchema = z.object({
+  fairTemplate: z
+    .object({
+      id: z.string(),
+      title: z.string(),
+      status: ContractTemplateStatusSchema,
+      updatedAt: z.string().datetime(),
+    })
+    .nullable(),
+
+  instance: FairContractInstanceSchema.nullable(),
+  addendumChoice: FairAddendumChoiceSchema.nullable(),
+
+  signedAt: z.string().datetime().nullable(),
+
+  signUrl: z.string().url().nullable(),
+  signUrlExpiresAt: z.string().datetime().nullable().optional(),
+
+  hasPdf: z.boolean(),
+  hasContractInstance: z.boolean(),
+})
+export type FairExhibitorContract = z.infer<typeof FairExhibitorContractSchema>
+
+/** =========================
+ * ROW (exhibitor)
+ * ========================= */
 
 export const FairExhibitorRowSchema = z.object({
   ownerFairId: z.string(),
@@ -136,41 +265,43 @@ export const FairExhibitorRowSchema = z.object({
   owner: FairExhibitorOwnerSchema,
 
   stallsQtyPurchased: z.number(),
-  stallSlots: z.array(FairExhibitorSlotSchema),
-
   stallsQtyLinked: z.number(),
+
+  // ✅ mantém para UI (lista simples de stalls)
   linkedStalls: z.array(FairLinkedStallSchema),
 
   status: OwnerFairStatusSchema,
   isComplete: z.boolean(),
 
-  /**
-   * ✅ Agora pago é derivado do plano/parcelas.
-   */
-  contractSignedAt: z.string().datetime().nullable().optional(),
+  contractSignedAt: z.string().datetime().nullable(),
 
-  /**
-   * ✅ Novo: resumo do pagamento (pode ser null se não configurado).
-   */
-  payment: FairPaymentSummarySchema.nullable().optional(),
+  // ✅ pagamento agregado (novo shape)
+  payment: AggregatedPaymentSchema,
+
+  // ✅ detalhe por compra
+  purchasesPayments: z.array(PurchasePaymentSummarySchema),
+
+  // ✅ opcional para UI: lista de StallFair com purchase consumida
+  stallFairs: z.array(FairStallFairItemSchema),
+
+  contract: FairExhibitorContractSchema,
 })
 export type FairExhibitorRow = z.infer<typeof FairExhibitorRowSchema>
 
-/**
- * Header da feira para a tela (sem outra chamada).
- */
+/** =========================
+ * FAIR HEADER
+ * ========================= */
+
 export const FairSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
   status: z.enum(["ATIVA", "FINALIZADA", "CANCELADA"]),
   address: z.string(),
 
-  stallsCapacity: z.number().optional(),
-  stallsReserved: z.number().optional(),
-  stallsRemaining: z.number().optional(),
+  stallsCapacity: z.number(),
+  stallsReserved: z.number(),
+  stallsRemaining: z.number(),
 
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
   occurrences: z.array(
     z.object({
       id: z.string(),
@@ -178,8 +309,17 @@ export const FairSummarySchema = z.object({
       endsAt: z.string().datetime(),
     }),
   ),
+
+  contractSettings: FairContractSettingsSchema,
+
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
 })
 export type FairSummary = z.infer<typeof FairSummarySchema>
+
+/** =========================
+ * RESPONSE
+ * ========================= */
 
 export const FairExhibitorsResponseSchema = z.object({
   fair: FairSummarySchema,
@@ -187,14 +327,15 @@ export const FairExhibitorsResponseSchema = z.object({
 })
 export type FairExhibitorsResponse = z.infer<typeof FairExhibitorsResponseSchema>
 
+/** =========================
+ * PATCH status
+ * ========================= */
+
 export const UpdateExhibitorStatusInputSchema = z.object({
   status: OwnerFairStatusSchema,
 })
 export type UpdateExhibitorStatusInput = z.infer<typeof UpdateExhibitorStatusInputSchema>
 
-/**
- * Resposta do PATCH status (mantemos compat).
- */
 export const UpdateExhibitorStatusResponseSchema = z.object({
   id: z.string(), // ownerFairId
   ownerId: z.string(),
@@ -203,28 +344,44 @@ export const UpdateExhibitorStatusResponseSchema = z.object({
   status: OwnerFairStatusSchema,
   stallsQty: z.number(),
 
-  paidAt: z.string().nullable().optional(),
-  contractSignedAt: z.string().nullable().optional(),
+  contractSignedAt: z.string().datetime().nullable().optional(),
 
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 })
 export type UpdateExhibitorStatusResponse = z.infer<typeof UpdateExhibitorStatusResponseSchema>
 
-/**
- * Inputs/Outputs do pagamento (parcelas).
- * Um único endpoint/mutation com "action" para marcar/desmarcar.
- */
+/** =========================
+ * PAYMENTS - settle installments (atalho)
+ * ========================= */
+
 export const SettleInstallmentsActionSchema = z.enum(["SET_PAID", "SET_UNPAID"])
 export type SettleInstallmentsAction = z.infer<typeof SettleInstallmentsActionSchema>
 
+/**
+ * ✅ Agora settle precisa saber qual COMPRA será afetada.
+ * O backend vai trabalhar nas parcelas daquela purchase.
+ */
 export const SettleInstallmentsInputSchema = z
   .object({
+    purchaseId: z.string().min(1, "purchaseId é obrigatório."),
     action: SettleInstallmentsActionSchema,
+
     payAll: z.boolean().optional(),
     numbers: z.array(z.number().int().positive()).optional(),
 
-    paidAt: z.string().datetime().optional(),
+    /**
+     * Data do pagamento (date-only).
+     * O backend normaliza pra 00:00Z.
+     */
+    paidAt: DateOnlySchema.optional(),
+
+    /**
+     * Para o atalho, geralmente não precisamos.
+     * Se você quiser que o backend use esse valor como pagamento "fixo" no SET_PAID,
+     * pode manter aqui — mas na abordagem com histórico,
+     * o ideal é o atalho quitar o restante automaticamente.
+     */
     paidAmountCents: z.number().int().positive().optional(),
   })
   .refine((v) => v.payAll === true || (Array.isArray(v.numbers) && v.numbers.length > 0), {
@@ -235,15 +392,63 @@ export type SettleInstallmentsInput = z.infer<typeof SettleInstallmentsInputSche
 
 export const SettleInstallmentsResponseSchema = z.object({
   ok: z.boolean(),
-  planId: z.string(),
+  purchaseId: z.string(),
   status: OwnerFairPaymentStatusSchema,
   installmentsCount: z.number(),
   paidCount: z.number(),
-  message: z.string().optional(),
 })
 export type SettleInstallmentsResponse = z.infer<typeof SettleInstallmentsResponseSchema>
 
-/** Helpers */
+/** =========================
+ * PAYMENTS - reschedule installment
+ * ========================= */
+
+export const RescheduleInstallmentInputSchema = z.object({
+  dueDate: DateOnlySchema,
+  reason: z.string().max(500).optional(),
+})
+export type RescheduleInstallmentInput = z.infer<typeof RescheduleInstallmentInputSchema>
+
+/** =========================
+ * PAYMENTS - create installment payment (histórico)
+ * ========================= */
+
+export const CreateInstallmentPaymentInputSchema = z.object({
+  paidAt: DateOnlySchema,
+  amountCents: z.number().int().positive(),
+  note: z.string().max(500).optional(),
+})
+export type CreateInstallmentPaymentInput = z.infer<typeof CreateInstallmentPaymentInputSchema>
+
+/**
+ * Resposta padronizada para ações em parcela:
+ * - create payment
+ * - reschedule
+ */
+export const InstallmentPaymentActionResponseSchema = z.object({
+  ok: z.boolean(),
+
+  purchaseId: z.string(),
+  purchaseStatus: OwnerFairPaymentStatusSchema,
+  purchaseTotalCents: z.number(),
+  purchasePaidCents: z.number(),
+  purchasePaidAt: z.string().datetime().nullable(),
+
+  installmentId: z.string(),
+  installmentNumber: z.number(),
+  installmentAmountCents: z.number(),
+  installmentPaidAmountCents: z.number(),
+  installmentPaidAt: z.string().datetime().nullable(),
+  installmentDueDate: z.string().datetime(),
+})
+export type InstallmentPaymentActionResponse = z.infer<
+  typeof InstallmentPaymentActionResponseSchema
+>
+
+/** =========================
+ * HELPERS
+ * ========================= */
+
 export function exhibitorDisplayName(row: FairExhibitorRow) {
   return row.owner.fullName?.trim() || "—"
 }
@@ -252,11 +457,8 @@ export function exhibitorDisplayDoc(row: FairExhibitorRow) {
   return row.owner.document || "—"
 }
 
-/**
- * Contato "principal" (para busca e exibição curta).
- */
 export function exhibitorDisplayContact(row: FairExhibitorRow) {
-  return row.owner.phone?.trim() || row.owner.email?.trim() || row.owner.pixKey?.trim() || "—"
+  return row.owner.phone?.trim() || row.owner.email?.trim() || "—"
 }
 
 export function ownerFairStatusLabel(status: OwnerFairStatus) {
@@ -289,19 +491,9 @@ export function stallSizeLabel(size: StallSize) {
   }
 }
 
-export function slotsSummary(slots: FairExhibitorSlot[]) {
-  if (!slots?.length) return "—"
-  return slots
-    .filter((s) => (s.qty ?? 0) > 0)
-    .map((s) => `${stallSizeLabel(s.stallSize)}: ${s.qty}`)
-    .join(" · ")
-}
-
 /**
- * Helpers de pagamento para UI:
- * - texto "1/3"
+ * "paid/total" das parcelas de uma compra (ex.: 1/3).
  */
-export function paymentInstallmentsLabel(payment: FairPaymentSummary | null | undefined) {
-  if (!payment) return "—"
-  return `${payment.paidCount}/${payment.installmentsCount}`
+export function purchaseInstallmentsLabel(p: PurchasePaymentSummary) {
+  return `${p.paidCount}/${p.installmentsCount}`
 }

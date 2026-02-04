@@ -3,29 +3,44 @@
 /**
  * Menu de ações por linha (…)
  * Responsabilidade:
- * - Ações rápidas: detalhes, pagamentos, alterar status
+ * - Ações rápidas: detalhes, pagamentos, contrato, alterar status
  *
  * Decisão:
- * - A ação "Pagamentos" abre o mesmo modal usado pelo chip da coluna.
+ * - Contrato abre um modal com ações (copiar/gerar link, baixar/visualizar).
  */
 
 import * as React from "react"
 import type { FairExhibitorRow } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
 
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Eye, Pencil, CreditCard, MoreVertical } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Eye, Pencil, CreditCard, MoreVertical, FileText } from "lucide-react"
 
 type Props = {
   row: FairExhibitorRow
   onViewExhibitorDetails: (row: FairExhibitorRow) => void
   onChangeStatus: (row: FairExhibitorRow) => void
 
-  /** ✅ novo: abre modal de pagamentos */
+  /** ✅ abre modal de pagamentos */
   onOpenPayments: (row: FairExhibitorRow) => void
+
+  /** ✅ novo: abre modal de contrato */
+  onOpenContract: (row: FairExhibitorRow) => void
 }
 
-export function FairStallsRowActions({ row, onViewExhibitorDetails, onChangeStatus, onOpenPayments }: Props) {
+export function FairStallsRowActions({
+  row,
+  onViewExhibitorDetails,
+  onChangeStatus,
+  onOpenPayments,
+  onOpenContract,
+}: Props) {
   const hasPayment = !!row.payment
 
   return (
@@ -42,10 +57,12 @@ export function FairStallsRowActions({ row, onViewExhibitorDetails, onChangeStat
           Ver detalhes
         </DropdownMenuItem>
 
-        <DropdownMenuItem
-          onClick={() => onOpenPayments(row)}
-          disabled={!hasPayment}
-        >
+        <DropdownMenuItem onClick={() => onOpenContract(row)}>
+          <FileText className="mr-2 h-4 w-4" />
+          Contrato
+        </DropdownMenuItem>
+
+        <DropdownMenuItem onClick={() => onOpenPayments(row)} disabled={!hasPayment}>
           <CreditCard className="mr-2 h-4 w-4" />
           Pagamentos
         </DropdownMenuItem>

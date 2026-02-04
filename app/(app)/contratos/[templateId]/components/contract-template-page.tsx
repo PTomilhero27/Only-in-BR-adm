@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useDeleteDocumentTemplateMutation, useDocumentTemplateQuery, useUpdateDocumentTemplateMutation } from "@/app/modules/contratos/document-templates/document-templates.queries";
 import { DocumentTemplateStatus } from "@/app/modules/contratos/document-templates/document-templates.schema";
 import { ContractEditorShell } from "../../components/contract-editor-shell";
+import { normalizeContractContent } from "@/app/modules/contratos/hooks/normalize-contract-content";
 
 
 
@@ -48,9 +49,11 @@ export function ContractTemplatePage({ templateId }: { templateId: string }) {
   async function handleSaveDraft() {
     if (!template) return;
 
+    const content = normalizeContractContent(template.content);
+
     await patch({
       status: "DRAFT" as DocumentTemplateStatus,
-      content: template.content,
+      content,
     });
   }
 

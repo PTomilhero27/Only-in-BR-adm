@@ -206,3 +206,25 @@
     transform: translateY(-40%);
   }
 }
+
+
+html[data-pdf-mode="1"] .registration-card {
+  padding: 18px !important;
+}
+
+html[data-pdf-mode="1"] .registration-card .text-sm {
+  font-size: 12px !important;
+}
+
+html[data-pdf-mode="1"] .registration-card .text-\[11px\] {
+  font-size: 10px !important;
+}
+
+html[data-pdf-mode="1"] .registration-card .rounded-xl {
+  border-radius: 10px !important;
+}
+
+html[data-pdf-mode="1"] .registration-card .py-2 {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}

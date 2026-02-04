@@ -4,6 +4,10 @@
  * Responsabilidade:
  * - Padronizar keys de cache do TanStack Query.
  * - Encapsular queries/mutations com invalidação consistente.
+ *
+ * Decisão:
+ * - Mantemos hook genérico (useDocumentTemplatesQuery)
+ * - Criamos hooks específicos para evitar repetir filtros (ex.: contrato principal publicado)
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type {
@@ -24,15 +28,53 @@ export const documentTemplatesQueryKeys = {
 
   /**
    * Incluímos filtros no key para cache separado por variação de lista.
-   * Ex.: lista summary vs full (se algum dia você usar) ou publicados vs rascunhos.
+   * Ex.: summary vs full ou publicados vs rascunhos.
    */
   list: (filters?: ListDocumentTemplatesQuery) =>
     ["contracts", "document-templates", "list", { ...(filters ?? {}) }] as const,
 
-  byId: (id: string) => ["contracts", "document-templates", "byId", { id }] as const,
+  byId: (id: string) =>
+    ["contracts", "document-templates", "byId", { id }] as const,
 }
 
+/**
+ * Hook genérico (lista).
+ */
 export function useDocumentTemplatesQuery(filters?: ListDocumentTemplatesQuery) {
+  return useQuery({
+    queryKey: documentTemplatesQueryKeys.list(filters),
+    queryFn: () => listDocumentTemplates(filters),
+  })
+}
+
+/**
+ * ✅ Hook pronto para a UI da feira:
+ * Lista somente CONTRATOS (não aditivos) publicados em modo summary.
+ */
+export function useMainContractTemplatesQuery() {
+  const filters: ListDocumentTemplatesQuery = {
+    mode: "summary",
+    isAddendum: Boolean(false),
+    status: "PUBLISHED",
+  }
+
+  return useQuery({
+    queryKey: documentTemplatesQueryKeys.list(filters),
+    queryFn: () => listDocumentTemplates(filters),
+  })
+}
+
+/**
+ * ✅ Hook pronto para listar ADITIVOS publicados (modo summary).
+ * Útil quando você for configurar aditivos por expositor no OwnerFair.
+ */
+export function useAddendumTemplatesQuery() {
+  const filters: ListDocumentTemplatesQuery = {
+    mode: "summary",
+    isAddendum: true,
+    status: "PUBLISHED",
+  }
+
   return useQuery({
     queryKey: documentTemplatesQueryKeys.list(filters),
     queryFn: () => listDocumentTemplates(filters),
@@ -55,7 +97,8 @@ export function useCreateDocumentTemplateMutation() {
   const qc = useQueryClient()
 
   return useMutation({
-    mutationFn: (input: CreateDocumentTemplateInput) => createDocumentTemplate(input),
+    mutationFn: (input: CreateDocumentTemplateInput) =>
+      createDocumentTemplate(input),
 
     /**
      * Decisão: qualquer criação impacta listagens e combos.

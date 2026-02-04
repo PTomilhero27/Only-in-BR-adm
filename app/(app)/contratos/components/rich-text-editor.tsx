@@ -1,56 +1,78 @@
-"use client";
+"use client"
 
 /**
  * RichTextEditor (Tiptap) — Admin UX
  *
- * Exporta um contrato estável para o resto do módulo:
- * - EMPTY_RICH_TEXT
- * - isRichTextEmpty
- * - type RichTextJson
+ * Responsabilidade:
+ * - Centralizar a configuração do Tiptap para o módulo de contratos.
+ * - Fornecer um JSON estável para salvar no banco (ProseMirror/Tiptap JSON).
+ * - Permitir "slash commands" ("/") para inserir placeholders de contrato.
  *
  * Importante no Next:
  * - immediatelyRender: false (evita erro SSR/hidratação)
+ *
+ * Observação importante (bug “1 a +”):
+ * - NÃO reutilize o mesmo objeto JSON como “vazio”.
+ * - Tiptap/ProseMirror pode mutar o conteúdo e, se a referência for compartilhada,
+ *   um novo editor pode “herdar” listas/marcações.
+ * - Por isso, exportamos `createEmptyRichText()` (factory) e evitamos referência única.
  */
 
-import * as React from "react";
-import { useEditor, EditorContent, type JSONContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
+import * as React from "react"
+import { useEditor, EditorContent, type JSONContent } from "@tiptap/react"
+import StarterKit from "@tiptap/starter-kit"
 
-import { Bold, Italic, List, ListOrdered } from "lucide-react";
+import { Bold, Italic, List, ListOrdered } from "lucide-react"
 
-import { cn } from "@/lib/utils";
-import { Toggle } from "@/components/ui/toggle";
-import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils"
+import { Toggle } from "@/components/ui/toggle"
+import { Separator } from "@/components/ui/separator"
 
-export type RichTextJson = JSONContent;
+// ✅ Extensão de slash command ("/")
+import { SlashCommandExtension } from "@/app/modules/contratos/hooks/slash-command.extension"
 
-export const EMPTY_RICH_TEXT: RichTextJson = {
-  type: "doc",
-  content: [{ type: "paragraph" }],
-};
+export type RichTextJson = JSONContent
+
+/**
+ * Factory: sempre retorna um JSON novo.
+ * Isso evita “vazamento” de estado entre instâncias do editor.
+ */
+export function createEmptyRichText(): RichTextJson {
+  return {
+    type: "doc",
+    content: [{ type: "paragraph" }],
+  }
+}
+
+/**
+ * Mantido por compatibilidade com código legado,
+ * mas evite usar diretamente (prefira createEmptyRichText()).
+ */
+export const EMPTY_RICH_TEXT: RichTextJson = createEmptyRichText()
 
 export function isRichTextEmpty(doc: RichTextJson | null | undefined) {
-  if (!doc) return true;
-  const content: any[] = (doc as any).content ?? [];
-  if (!Array.isArray(content) || content.length === 0) return true;
+  if (!doc) return true
+  const content: any[] = (doc as any).content ?? []
+  if (!Array.isArray(content) || content.length === 0) return true
 
   if (content.length === 1 && content[0]?.type === "paragraph") {
-    const pContent = content[0]?.content ?? [];
-    return !Array.isArray(pContent) || pContent.length === 0;
+    const pContent = content[0]?.content ?? []
+    return !Array.isArray(pContent) || pContent.length === 0
   }
-  return false;
+
+  return false
 }
 
 type Props = {
-  value: RichTextJson;
-  onChange: (next: RichTextJson) => void;
-  placeholder?: string;
-  readOnly?: boolean;
-  className?: string;
-};
+  value: RichTextJson
+  onChange: (next: RichTextJson) => void
+  placeholder?: string
+  readOnly?: boolean
+  className?: string
+}
 
 const TOGGLE_ACTIVE =
-  "data-[state=on]:bg-orange-500 data-[state=on]:text-white data-[state=on]:hover:bg-orange-500/90";
+  "data-[state=on]:bg-orange-500 data-[state=on]:text-white data-[state=on]:hover:bg-orange-500/90"
 
 export function RichTextEditor({
   value,
@@ -60,15 +82,23 @@ export function RichTextEditor({
   className,
 }: Props) {
   const editor = useEditor({
+    /**
+     * Evita problemas de SSR/hidratação no Next App Router
+     */
     immediatelyRender: false,
 
+    /**
+     * Extensions:
+     * - StarterKit: base do editor (bold/italic/lists etc.)
+     * - SlashCommandExtension: habilita "/" para inserir placeholders
+     */
     extensions: [
       StarterKit.configure({
         heading: false,
         codeBlock: false,
         blockquote: false,
 
-        // ✅ Fix definitivo: aplica classe no HTML gerado (não depende de CSS global)
+        // Aplica classe no HTML gerado para listas (sem depender de CSS global)
         bulletList: {
           keepMarks: true,
           keepAttributes: false,
@@ -83,11 +113,30 @@ export function RichTextEditor({
           HTMLAttributes: { class: "my-1" },
         },
       }),
+
+      /**
+       * ✅ Slash Commands:
+       * - Quando o usuário digita "/" o Suggestion abre o menu.
+       * - Ao escolher, inserimos um placeholder (ex.: {{EXPOSITOR_NOME}}).
+       */
+      SlashCommandExtension,
     ],
 
-    content: value ?? EMPTY_RICH_TEXT,
+    /**
+     * Conteúdo inicial
+     * ✅ sempre garantimos um JSON válido, preferindo value.
+     * Se vier null/undefined, criamos um vazio novo.
+     */
+    content: value ?? createEmptyRichText(),
+
+    /**
+     * Modo leitura
+     */
     editable: !readOnly,
 
+    /**
+     * Atributos e classes do editor
+     */
     editorProps: {
       attributes: {
         class: cn(
@@ -105,21 +154,28 @@ export function RichTextEditor({
       },
     },
 
+    /**
+     * Sempre que muda, devolvemos o JSON (salvo no backend).
+     */
     onUpdate: ({ editor }) => onChange(editor.getJSON()),
-  });
+  })
 
+  /**
+   * Mantém o editor sincronizado quando o value vem de fora (ex.: abrir modal, reset, etc.)
+   * ✅ quando `value` vier vazio, criamos um JSON novo para evitar referência compartilhada.
+   */
   React.useEffect(() => {
-    if (!editor) return;
+    if (!editor) return
 
-    const next = value ?? EMPTY_RICH_TEXT;
-    const current = editor.getJSON();
+    const next = value ?? createEmptyRichText()
+    const current = editor.getJSON()
 
     if (JSON.stringify(current) !== JSON.stringify(next)) {
-      editor.commands.setContent(next, { emitUpdate: false });
+      editor.commands.setContent(next, { emitUpdate: false })
     }
-  }, [editor, value]);
+  }, [editor, value])
 
-  if (!editor) return null;
+  if (!editor) return null
 
   return (
     <div className="space-y-2">
@@ -175,5 +231,5 @@ export function RichTextEditor({
 
       <EditorContent editor={editor} />
     </div>
-  );
+  )
 }

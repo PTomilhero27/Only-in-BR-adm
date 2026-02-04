@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import type { OwnerFairStatus } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
 import { Layers3, Users, CheckCircle2, Store, ChevronDown } from "lucide-react"
-import { OwnerFairStatusCountBadge } from "./owner-fair-status-badges"
+import { OwnerFairStatusCountBadge } from "./table/owner-fair-status-badges"
 
 /**
  * Cards de KPI do dashboard de barracas.

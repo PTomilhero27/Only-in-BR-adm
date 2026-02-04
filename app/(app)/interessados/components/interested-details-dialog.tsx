@@ -47,7 +47,7 @@ import {
     type InterestListItem,
 } from "@/app/modules/interests/interests.schema"
 
-import { InterestFairsTab } from "./tabs/interest-fairs-tab"
+import { InterestFairsTab } from "./tabs/fairs/interest-fairs-tab"
 import { useGrantPortalAccessMutation } from "@/app/modules/interests/interests.queries"
 import type { InterestsFilters } from "@/app/modules/interests/interests.schema"
 

@@ -15,8 +15,16 @@ import {
 } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
 
 import { FairStallsFiltersBar } from "./components/fair-stalls-filters-bar"
-import { FairStallsTable } from "./components/fair-stalls-table"
+import { FairStallsTable } from "./components/table/fair-stalls-table"
 import { StallsKpiCards } from "./components/stalls-kpi-cards"
+
+// ✅ UI contrato da feira
+import { FairContractSettingsCard } from "./components/contratos/fair-contract-settings-card"
+import { FairContractSettingsDialog } from "./components/contratos/fair-contract-settings-dialog"
+
+// ✅ hooks reais (backend)
+import { useMainContractTemplatesQuery } from "@/app/modules/contratos/document-templates/document-templates.queries"
+import { useUpsertFairContractSettingsMutation } from "@/app/modules/contratos/contract-settings/fair-contract-settings.queries"
 
 /**
  * Página: Barracas vinculadas (tabela).
@@ -24,7 +32,11 @@ import { StallsKpiCards } from "./components/stalls-kpi-cards"
  * - Buscar { fair, items }
  * - Mostrar nome da feira no header
  * - Aplicar filtros locais (q + status single)
- * - Renderizar KPIs + tabela
+ * - Renderizar: Contrato da feira + KPIs + tabela
+ *
+ * Decisão:
+ * - O contrato principal (fair.contractSettings) vem no payload do endpoint de expositores,
+ *   evitando uma chamada extra só para "configurações da feira".
  */
 export default function FairStallsPage() {
   const { fairId } = useParams<{ fairId: string }>()
@@ -32,11 +44,26 @@ export default function FairStallsPage() {
   const [q, setQ] = useState("")
   const [status, setStatus] = useState<OwnerFairStatus | "ALL">("ALL")
 
+  // ✅ estado do dialog de contrato
+  const [contractDialogOpen, setContractDialogOpen] = useState(false)
+
   const query = useFairExhibitorsQuery(fairId)
+
+  // ✅ templates reais (somente contrato principal publicado, sem aditivo)
+  const templatesQuery = useMainContractTemplatesQuery()
+
+  // ✅ mutation real (salvar vínculo)
+  const upsertContractMutation = useUpsertFairContractSettingsMutation()
 
   const fairName = query.data?.fair?.name ?? "Feira"
   const fairStatus = query.data?.fair?.status
   const items = query.data?.items ?? []
+
+  /**
+   * ✅ contrato vinculado (pode ser null)
+   * Agora vem tipado via Zod no schema do módulo.
+   */
+  const contractSettings = query.data?.fair?.contractSettings ?? null
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase()
@@ -83,9 +110,7 @@ export default function FairStallsPage() {
       doneExhibitors,
       statusCounts,
 
-      // 🔜 futuro (quando você adicionar na Fair):
-      stallsCapacity: (query.data?.fair as any)?.stallsCapacity ?? null,
-      exhibitorsLimit: (query.data?.fair as any)?.exhibitorsLimit ?? null,
+      stallsCapacity: query.data?.fair?.stallsCapacity ?? null,
     }
   }, [items, query.data?.fair])
 
@@ -108,10 +133,33 @@ export default function FairStallsPage() {
         <Separator />
       </div>
 
-      {/* ✅ KPI (accordion global + mini-card de barracas no Concluídos) */}
+      {/* ✅ Contrato vinculado à feira */}
+      <FairContractSettingsCard
+        fairName={fairName}
+        contractSettings={contractSettings}
+        isLoading={query.isLoading}
+        onOpenDialog={() => setContractDialogOpen(true)}
+      />
+
+      <FairContractSettingsDialog
+        open={contractDialogOpen}
+        onOpenChange={setContractDialogOpen}
+        currentTemplateId={contractSettings?.templateId ?? null}
+        templates={templatesQuery.data ?? []}
+        isLoadingTemplates={templatesQuery.isLoading}
+        isSaving={upsertContractMutation.isPending}
+        onConfirm={(templateId) => {
+          upsertContractMutation.mutate({
+            fairId,
+            input: { templateId },
+          })
+        }}
+      />
+
+      {/* ✅ KPI */}
       <StallsKpiCards kpis={kpis} />
 
-      {/* ✅ Filtro single bonito */}
+      {/* ✅ Filtro */}
       <FairStallsFiltersBar
         q={q}
         onChangeQ={setQ}
@@ -123,7 +171,12 @@ export default function FairStallsPage() {
         }}
       />
 
-      <FairStallsTable fairId={fairId} data={filtered} isLoading={query.isLoading} isError={query.isError} />
+      <FairStallsTable
+        fairId={fairId}
+        data={filtered}
+        isLoading={query.isLoading}
+        isError={query.isError}
+      />
     </div>
   )
 }
