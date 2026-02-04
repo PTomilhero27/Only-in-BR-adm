@@ -10,6 +10,11 @@
  *   - settle (atalho): marca/desfaz parcelas por purchaseId
  *   - reschedule: muda vencimento (dueDate) de 1 parcela
  *   - createPayment: registra pagamento parcial (histórico)
+ *
+ * ✅ Atualizações recentes:
+ * - Owner agora inclui endereço + pagamento (campos do model Owner)
+ * - Status inclui AGUARDANDO_BARRACAS
+ * - settle response inclui paidCents/totalCents
  */
 import { z } from "zod"
 
@@ -34,6 +39,7 @@ export const OwnerFairStatusSchema = z.enum([
   "SELECIONADO",
   "AGUARDANDO_PAGAMENTO",
   "AGUARDANDO_ASSINATURA",
+  "AGUARDANDO_BARRACAS",
   "CONCLUIDO",
 ])
 export type OwnerFairStatus = z.infer<typeof OwnerFairStatusSchema>
@@ -56,10 +62,23 @@ export type StallType = z.infer<typeof StallTypeSchema>
 export const ContractTemplateStatusSchema = z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"])
 export type ContractTemplateStatus = z.infer<typeof ContractTemplateStatusSchema>
 
+export const BankAccountTypeSchema = z.enum(["CORRENTE", "POUPANCA", "PAGAMENTO"])
+export type BankAccountType = z.infer<typeof BankAccountTypeSchema>
+
 /** =========================
  * OWNER / EXHIBITOR (linha)
  * ========================= */
 
+/**
+ * Owner dentro do contexto da feira (expositor).
+ * Responsabilidade:
+ * - Dados de identificação e contato (tabela)
+ * - ✅ Endereço e Pagamento (modal “Dados”)
+ *
+ * Observação:
+ * - Campos opcionais/nullable porque podem não estar preenchidos.
+ * - Mantemos o schema tolerante para evolução do backend sem quebrar UI.
+ */
 export const FairExhibitorOwnerSchema = z.object({
   id: z.string(),
   personType: z.enum(["PF", "PJ"]),
@@ -69,8 +88,31 @@ export const FairExhibitorOwnerSchema = z.object({
   email: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
 
-  // ✅ o backend atual em listExhibitors seleciona só estes campos
-  // (se futuramente voltar a trazer endereço/banco, a gente reintroduz aqui)
+  // -------------------------
+  // ✅ Endereço (Owner)
+  // -------------------------
+  addressFull: z.string().nullable().optional(),
+  addressCity: z.string().nullable().optional(),
+  addressState: z.string().nullable().optional(),
+  addressZipcode: z.string().nullable().optional(),
+  addressNumber: z.string().nullable().optional(),
+
+  // -------------------------
+  // ✅ Pagamento (Owner)
+  // -------------------------
+  pixKey: z.string().nullable().optional(),
+  bankName: z.string().nullable().optional(),
+  bankAgency: z.string().nullable().optional(),
+  bankAccount: z.string().nullable().optional(),
+  bankAccountType: BankAccountTypeSchema.nullable().optional(),
+
+  bankHolderDoc: z.string().nullable().optional(),
+  bankHolderName: z.string().nullable().optional(),
+
+  // -------------------------
+  // ✅ Extra
+  // -------------------------
+  stallsDescription: z.string().nullable().optional(),
 })
 export type FairExhibitorOwner = z.infer<typeof FairExhibitorOwnerSchema>
 
@@ -396,6 +438,10 @@ export const SettleInstallmentsResponseSchema = z.object({
   status: OwnerFairPaymentStatusSchema,
   installmentsCount: z.number(),
   paidCount: z.number(),
+
+  // ✅ o backend retorna hoje
+  paidCents: z.number(),
+  totalCents: z.number(),
 })
 export type SettleInstallmentsResponse = z.infer<typeof SettleInstallmentsResponseSchema>
 
@@ -469,6 +515,8 @@ export function ownerFairStatusLabel(status: OwnerFairStatus) {
       return "Aguardando pagamento"
     case "AGUARDANDO_ASSINATURA":
       return "Aguardando assinatura"
+    case "AGUARDANDO_BARRACAS":
+      return "Aguardando barracas"
     case "CONCLUIDO":
       return "Concluído"
     default:

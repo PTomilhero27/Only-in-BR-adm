@@ -310,8 +310,6 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
         }}
         fairId={fairId}
         row={contractRow}
-        isGeneratingLink={false}
-        onGenerateSignatureLink={handleGenerateSignatureLink}
       />
 
       <ChangeExhibitorStatusDialog

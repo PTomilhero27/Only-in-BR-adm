@@ -28,7 +28,7 @@ import { FairSummary } from "@/app/modules/fairs/exhibitors/exhibitors.schema";
  * - Recebe `open` e `onOpenChange` para o controle ficar no componente pai.
  */
 export function FairSwitcherDialog(props: {
-  fairs: FairSummary[];
+  fairs: any[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title?: string;
