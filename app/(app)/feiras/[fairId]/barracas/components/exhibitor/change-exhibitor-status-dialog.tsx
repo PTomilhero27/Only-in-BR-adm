@@ -30,13 +30,28 @@ import { toast } from "@/components/ui/toast"
 import { getErrorMessage } from "@/app/shared/utils/get-error-message"
 import { getOwnerFairStatusMeta } from "../table/owner-fair-status-badges"
 import { Spinner } from "@/components/ui/spinner"
-import { ScrollArea } from "@/components/ui/scroll-area"
 
 type Props = {
   fairId: string
   row: FairExhibitorRow | null
   open: boolean
   onOpenChange: (open: boolean) => void
+}
+
+/**
+ * Regras:
+ * - missing (pendência) é mais importante que notes (nota).
+ * - toast do projeto só suporta title/subtitle => condensamos em uma frase curta.
+ */
+function formatStatusReason(info?: { notes?: string[]; missing?: string[] }) {
+  const missing = Array.isArray(info?.missing) ? info?.missing : []
+  const notes = Array.isArray(info?.notes) ? info?.notes : []
+
+  const reason = missing[0] || notes[0] || ""
+  if (!reason) return ""
+
+  // Mantém curto para toast (evita parágrafos)
+  return reason.length > 140 ? `${reason.slice(0, 140)}…` : reason
 }
 
 const STATUS_OPTIONS: Array<{
@@ -95,15 +110,41 @@ export function ChangeExhibitorStatusDialog({ fairId, row, open, onOpenChange }:
   async function handleSave() {
     if (!row || !hasChange) return
 
+    const requestedStatus = nextStatus
+
     try {
-      await mutation.mutateAsync({
+      /**
+       * ✅ Novo contrato:
+       * Backend retorna { ownerFair, info }
+       * - ownerFair.status é o status realmente aplicado
+       * - info traz missing/notes para explicar decisões
+       */
+      const result = await mutation.mutateAsync({
         ownerId: row.owner.id,
-        status: nextStatus,
+        status: requestedStatus,
       })
+
+      const appliedStatus = result?.ownerFair?.status ?? requestedStatus
+      const reason = formatStatusReason(result?.info)
+
+      // Se o backend ajustou o status, refletimos no rádio e explicamos no toast.
+      if (appliedStatus !== requestedStatus) {
+        setNextStatus(appliedStatus)
+
+        toast.warning({
+          title: "Status ajustado automaticamente",
+          subtitle: `${name}: ${ownerFairStatusLabel(requestedStatus)} → ${ownerFairStatusLabel(appliedStatus)}${
+            reason ? ` • Motivo: ${reason}` : ""
+          }`,
+        })
+
+        onOpenChange(false)
+        return
+      }
 
       toast.success({
         title: "Status atualizado",
-        subtitle: `${name} → ${ownerFairStatusLabel(nextStatus)}`,
+        subtitle: `${name} → ${ownerFairStatusLabel(appliedStatus)}${reason ? ` • ${reason}` : ""}`,
       })
 
       onOpenChange(false)
@@ -116,133 +157,135 @@ export function ChangeExhibitorStatusDialog({ fairId, row, open, onOpenChange }:
   }
 
   return (
-    <Dialog  open={open} onOpenChange={onOpenChange}>
-      <DialogContent 
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
         className={cn(
           // ✅ grid resolve o bug do sticky e deixa 100% previsível no mobile
-          "grid  grid-rows-[auto,1fr,auto] gap-0",
-          
-          // garante que nada “vaze” fora do modal
+          "grid grid-rows-[auto,1fr,auto] gap-0",
         )}
       >
-        <div className="h-[90vh]  overflow-y-auto">
+        <div className="h-[90vh] overflow-y-auto">
+          {/* HEADER */}
+          <DialogHeader className="pb-3">
+            <DialogTitle>Alterar status</DialogTitle>
+            <DialogDescription>Selecione o novo status do expositor.</DialogDescription>
+          </DialogHeader>
 
-        {/* HEADER */}
-        <DialogHeader className="pb-3">
-          <DialogTitle>Alterar status</DialogTitle>
-          <DialogDescription>Selecione o novo status do expositor.</DialogDescription>
-        </DialogHeader>
-
-        {/* BODY (scroll) */}
-        <div className="">
-          {/* Contexto do expositor */}
-          <div className="rounded-xl border bg-muted/10 p-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-sm font-medium truncate">
-                  {name}{" "}
-                  <span className="text-muted-foreground font-normal">({personType})</span>
+          {/* BODY */}
+          <div>
+            {/* Contexto do expositor */}
+            <div className="rounded-xl border bg-muted/10 p-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium truncate">
+                    {name}{" "}
+                    <span className="text-muted-foreground font-normal">({personType})</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground font-mono truncate">{document}</div>
                 </div>
-                <div className="text-xs text-muted-foreground font-mono truncate">{document}</div>
+
+                <Badge variant="outline" className="shrink-0">
+                  Atual: {ownerFairStatusLabel(currentStatus)}
+                </Badge>
               </div>
 
-              <Badge variant="outline" className="shrink-0">
-                Atual: {ownerFairStatusLabel(currentStatus)}
-              </Badge>
+              {!row && (
+                <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                  <AlertTriangle className="h-4 w-4" />
+                  Nenhum expositor selecionado.
+                </div>
+              )}
             </div>
 
-            {!row && (
-              <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                <AlertTriangle className="h-4 w-4" />
-                Nenhum expositor selecionado.
-              </div>
-            )}
-          </div>
+            <Separator className="my-4" />
 
-          <Separator className="my-4" />
+            {/* Seleção de status */}
+            <div className="space-y-2 pb-6">
+              <div className="text-sm font-medium">Novo status</div>
 
-          {/* Seleção de status */}
-          <div className="space-y-2 pb-6">
-            <div className="text-sm font-medium">Novo status</div>
+              <RadioGroup
+                value={nextStatus}
+                onValueChange={(v) => setNextStatus(v as OwnerFairStatus)}
+                className="space-y-2"
+                disabled={!row || isSaving}
+              >
+                {STATUS_OPTIONS.map((opt) => {
+                  const selected = nextStatus === opt.value
+                  const meta = getOwnerFairStatusMeta(opt.value)
 
-            <RadioGroup
-              value={nextStatus}
-              onValueChange={(v) => setNextStatus(v as OwnerFairStatus)}
-              className="space-y-2"
-              disabled={!row || isSaving}
-            >
-              {STATUS_OPTIONS.map((opt) => {
-                const selected = nextStatus === opt.value
-                const meta = getOwnerFairStatusMeta(opt.value)
+                  return (
+                    <div
+                      key={opt.value}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        if (!row || isSaving) return
+                        setNextStatus(opt.value)
+                      }}
+                      onKeyDown={(e) => {
+                        if (!row || isSaving) return
+                        if (e.key === "Enter" || e.key === " ") setNextStatus(opt.value)
+                      }}
+                      className={cn(
+                        "flex items-start gap-3 rounded-xl border p-3 transition",
+                        "cursor-pointer select-none",
+                        "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                        selected ? meta.className : "hover:bg-muted/10",
+                      )}
+                    >
+                      <RadioGroupItem value={opt.value} id={`status-${opt.value}`} />
 
-                return (
-                  <div
-                    key={opt.value}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => {
-                      if (!row || isSaving) return
-                      setNextStatus(opt.value)
-                    }}
-                    onKeyDown={(e) => {
-                      if (!row || isSaving) return
-                      if (e.key === "Enter" || e.key === " ") setNextStatus(opt.value)
-                    }}
-                    className={cn(
-                      "flex items-start gap-3 rounded-xl border p-3 transition",
-                      "cursor-pointer select-none",
-                      "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-                      selected ? meta.className : "hover:bg-muted/10"
-                    )}
-                  >
-                    <RadioGroupItem value={opt.value} id={`status-${opt.value}`} />
-
-                    <div className="min-w-0">
-                      <Label htmlFor={`status-${opt.value}`} className="text-sm font-medium cursor-pointer">
-                        {opt.title}
-                      </Label>
-                      <div className="text-xs text-muted-foreground">{opt.description}</div>
+                      <div className="min-w-0">
+                        <Label
+                          htmlFor={`status-${opt.value}`}
+                          className="text-sm font-medium cursor-pointer"
+                        >
+                          {opt.title}
+                        </Label>
+                        <div className="text-xs text-muted-foreground">{opt.description}</div>
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
-            </RadioGroup>
+                  )
+                })}
+              </RadioGroup>
 
-            {mutation.isError && (
-              <div className="text-xs text-destructive">
-                Não foi possível salvar. Verifique sua conexão e tente novamente.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* FOOTER (fixo, sem sticky) */}
-        <DialogFooter className="border-t bg-background pt-3">
-          <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-end">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSaving}
-              className="w-full sm:w-auto"
-            >
-              Cancelar
-            </Button>
-
-            <Button onClick={handleSave} disabled={!row || !hasChange || isSaving} className="w-full sm:w-auto">
-              {isSaving ? (
-                <span className="inline-flex items-center gap-2">
-                  Salvando
-                  <Spinner className="h-4 w-4" />
-                </span>
-              ) : (
-                "Salvar"
+              {mutation.isError && (
+                <div className="text-xs text-destructive">
+                  Não foi possível salvar. Verifique sua conexão e tente novamente.
+                </div>
               )}
-            </Button>
+            </div>
           </div>
-        </DialogFooter>
-          
-        </div>
 
+          {/* FOOTER */}
+          <DialogFooter className="border-t bg-background pt-3">
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isSaving}
+                className="w-full sm:w-auto"
+              >
+                Cancelar
+              </Button>
+
+              <Button
+                onClick={handleSave}
+                disabled={!row || !hasChange || isSaving}
+                className="w-full sm:w-auto"
+              >
+                {isSaving ? (
+                  <span className="inline-flex items-center gap-2">
+                    Salvando
+                    <Spinner className="h-4 w-4" />
+                  </span>
+                ) : (
+                  "Salvar"
+                )}
+              </Button>
+            </div>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )

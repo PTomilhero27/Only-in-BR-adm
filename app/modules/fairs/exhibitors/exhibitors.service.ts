@@ -2,27 +2,35 @@ import { api } from "@/app/shared/http/api"
 import {
   FairExhibitorsResponseSchema,
   type FairExhibitorsResponse,
+
   UpdateExhibitorStatusInputSchema,
   type UpdateExhibitorStatusInput,
   UpdateExhibitorStatusResponseSchema,
   type UpdateExhibitorStatusResponse,
+
   SettleInstallmentsInputSchema,
   type SettleInstallmentsInput,
   SettleInstallmentsResponseSchema,
   type SettleInstallmentsResponse,
+
   RescheduleInstallmentInputSchema,
   type RescheduleInstallmentInput,
+
   CreateInstallmentPaymentInputSchema,
   type CreateInstallmentPaymentInput,
+
   InstallmentPaymentActionResponseSchema,
   type InstallmentPaymentActionResponse,
+
+  // ✅ NOVO
+  UpdateExhibitorObservationsInputSchema,
+  type UpdateExhibitorObservationsInput,
+  UpdateExhibitorObservationsResponseSchema,
+  type UpdateExhibitorObservationsResponse,
 } from "./exhibitors.schema"
 
 /**
  * GET /fairs/:fairId/exhibitors
- * Responsabilidade:
- * - Buscar a lista da tela de expositores da feira (Admin)
- * - Validar via Zod para evitar contrato implícito
  */
 export async function listFairExhibitors(fairId: string): Promise<FairExhibitorsResponse> {
   return api.get(`fairs/${fairId}/exhibitors`, FairExhibitorsResponseSchema)
@@ -30,8 +38,6 @@ export async function listFairExhibitors(fairId: string): Promise<FairExhibitors
 
 /**
  * PATCH /fairs/:fairId/exhibitors/:ownerId/status
- * Responsabilidade:
- * - Atualizar o status operacional do expositor na feira
  */
 export async function updateFairExhibitorStatus(params: {
   fairId: string
@@ -49,15 +55,31 @@ export async function updateFairExhibitorStatus(params: {
 }
 
 /**
+ * PATCH /fairs/:fairId/exhibitors/:ownerId/observations
+ * ✅ Padronizado para retorno { ownerFair: {...} }
+ */
+export async function updateFairExhibitorObservations(params: {
+  fairId: string
+  ownerId: string
+  input: UpdateExhibitorObservationsInput
+}): Promise<UpdateExhibitorObservationsResponse> {
+  const input = UpdateExhibitorObservationsInputSchema.parse(params.input)
+
+  const data = await api.patch(
+    `fairs/${params.fairId}/exhibitors/${params.ownerId}/observations`,
+    input,
+  )
+
+  const normalized =
+    data && typeof data === "object" && "ownerFair" in (data as any)
+      ? data
+      : { ownerFair: data }
+
+  return UpdateExhibitorObservationsResponseSchema.parse(normalized)
+}
+
+/**
  * PATCH /fairs/:fairId/exhibitors/:ownerId/payment/installments/settle
- * Responsabilidade:
- * - Atalho de baixar/desfazer parcelas de UMA compra (purchaseId).
- *
- * Contrato:
- * - purchaseId obrigatório
- * - action: SET_PAID | SET_UNPAID
- * - payAll=true OU numbers=[...]
- * - paidAt: YYYY-MM-DD (date-only)
  */
 export async function settleFairExhibitorInstallments(params: {
   fairId: string
@@ -76,9 +98,6 @@ export async function settleFairExhibitorInstallments(params: {
 
 /**
  * PATCH /fairs/:fairId/exhibitors/:ownerId/purchases/:purchaseId/installments/:number/reschedule
- * Responsabilidade:
- * - Reprogramar vencimento (dueDate) de 1 parcela específica
- * - Registrar auditoria no backend
  */
 export async function reschedulePurchaseInstallment(params: {
   fairId: string
@@ -99,9 +118,6 @@ export async function reschedulePurchaseInstallment(params: {
 
 /**
  * POST /fairs/:fairId/exhibitors/:ownerId/purchases/:purchaseId/installments/:number/payments
- * Responsabilidade:
- * - Registrar um pagamento no histórico (suporta pagamento parcial)
- * - Backend recalcula caches e status da compra
  */
 export async function createInstallmentPayment(params: {
   fairId: string

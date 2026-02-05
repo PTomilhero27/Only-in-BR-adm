@@ -2,19 +2,10 @@
  * Contratos do módulo "fairs/exhibitors" (painel admin).
  * Motivo: validar payload com Zod e evitar contratos implícitos.
  *
- * ✅ Atualizado para o novo financeiro por "compra" (OwnerFairPurchase) + histórico:
- * - items[].payment agora é agregado por purchases (não por StallFair)
- * - items[].purchasesPayments traz detalhe por compra e suas parcelas
- * - items[].stallFairs traz barracas vinculadas com a compra consumida
- * - actions financeiras:
- *   - settle (atalho): marca/desfaz parcelas por purchaseId
- *   - reschedule: muda vencimento (dueDate) de 1 parcela
- *   - createPayment: registra pagamento parcial (histórico)
- *
- * ✅ Atualizações recentes:
- * - Owner agora inclui endereço + pagamento (campos do model Owner)
- * - Status inclui AGUARDANDO_BARRACAS
- * - settle response inclui paidCents/totalCents
+ * ✅ Atualizado:
+ * - OwnerFair agora inclui `observations`
+ * - PATCH status retorna `{ ownerFair, info }` (status aplicado + motivos)
+ * - Actions financeiras retornam `ownerFairStatus` e `ownerFairStatusInfo`
  */
 import { z } from "zod"
 
@@ -69,16 +60,6 @@ export type BankAccountType = z.infer<typeof BankAccountTypeSchema>
  * OWNER / EXHIBITOR (linha)
  * ========================= */
 
-/**
- * Owner dentro do contexto da feira (expositor).
- * Responsabilidade:
- * - Dados de identificação e contato (tabela)
- * - ✅ Endereço e Pagamento (modal “Dados”)
- *
- * Observação:
- * - Campos opcionais/nullable porque podem não estar preenchidos.
- * - Mantemos o schema tolerante para evolução do backend sem quebrar UI.
- */
 export const FairExhibitorOwnerSchema = z.object({
   id: z.string(),
   personType: z.enum(["PF", "PJ"]),
@@ -88,18 +69,14 @@ export const FairExhibitorOwnerSchema = z.object({
   email: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
 
-  // -------------------------
-  // ✅ Endereço (Owner)
-  // -------------------------
+  // ✅ Endereço
   addressFull: z.string().nullable().optional(),
   addressCity: z.string().nullable().optional(),
   addressState: z.string().nullable().optional(),
   addressZipcode: z.string().nullable().optional(),
   addressNumber: z.string().nullable().optional(),
 
-  // -------------------------
-  // ✅ Pagamento (Owner)
-  // -------------------------
+  // ✅ Pagamento
   pixKey: z.string().nullable().optional(),
   bankName: z.string().nullable().optional(),
   bankAgency: z.string().nullable().optional(),
@@ -109,9 +86,7 @@ export const FairExhibitorOwnerSchema = z.object({
   bankHolderDoc: z.string().nullable().optional(),
   bankHolderName: z.string().nullable().optional(),
 
-  // -------------------------
   // ✅ Extra
-  // -------------------------
   stallsDescription: z.string().nullable().optional(),
 })
 export type FairExhibitorOwner = z.infer<typeof FairExhibitorOwnerSchema>
@@ -133,9 +108,6 @@ export const FairLinkedStallSchema = z.object({
 })
 export type FairLinkedStall = z.infer<typeof FairLinkedStallSchema>
 
-/**
- * Compra "resumida" que uma StallFair consumiu (para UI mostrar slot consumido).
- */
 export const FairConsumedPurchaseSchema = z.object({
   id: z.string(),
   stallSize: StallSizeSchema,
@@ -146,9 +118,6 @@ export const FairConsumedPurchaseSchema = z.object({
 })
 export type FairConsumedPurchase = z.infer<typeof FairConsumedPurchaseSchema>
 
-/**
- * Vínculo de barraca na feira (StallFair) com a compra consumida.
- */
 export const FairStallFairItemSchema = z.object({
   stallFairId: z.string(),
   stallId: z.string(),
@@ -162,12 +131,6 @@ export type FairStallFairItem = z.infer<typeof FairStallFairItemSchema>
  * PAYMENTS (por compra)
  * ========================= */
 
-/**
- * Parcela (installment) da compra.
- * Observação:
- * - paidAt aqui é cache de "quitada" (pode ser null)
- * - paidAmountCents é o somatório pago (cache)
- */
 export const PurchaseInstallmentSchema = z.object({
   id: z.string(),
   number: z.number().int().positive(),
@@ -179,10 +142,6 @@ export const PurchaseInstallmentSchema = z.object({
 })
 export type PurchaseInstallment = z.infer<typeof PurchaseInstallmentSchema>
 
-/**
- * Detalhe de pagamento por COMPRA (OwnerFairPurchase) para UI admin.
- * Esse objeto já vem pré-processado no backend (`toPurchasePaymentSummary`).
- */
 export const PurchasePaymentSummarySchema = z.object({
   purchaseId: z.string(),
   stallSize: StallSizeSchema,
@@ -206,10 +165,6 @@ export const PurchasePaymentSummarySchema = z.object({
 })
 export type PurchasePaymentSummary = z.infer<typeof PurchasePaymentSummarySchema>
 
-/**
- * Pagamento agregado do expositor na feira (derivado das purchases).
- * ⚠️ Esse é o objeto que o backend retorna hoje em `payment: aggregatedPayment`.
- */
 export const AggregatedPaymentSchema = z.object({
   status: OwnerFairPaymentStatusSchema,
   totalCents: z.number(),
@@ -251,8 +206,6 @@ export const FairContractInstanceSchema = z.object({
   pdfPath: z.string().nullable(),
 
   assinafyDocumentId: z.string().nullable(),
-  // obs: backend no listExhibitors não está retornando assinafySignerId no summary da instance
-  // então deixamos opcional/nullable pra evitar quebrar caso volte.
   assinafySignerId: z.string().nullable().optional(),
 
   signUrl: z.string().url().nullable().optional(),
@@ -309,7 +262,6 @@ export const FairExhibitorRowSchema = z.object({
   stallsQtyPurchased: z.number(),
   stallsQtyLinked: z.number(),
 
-  // ✅ mantém para UI (lista simples de stalls)
   linkedStalls: z.array(FairLinkedStallSchema),
 
   status: OwnerFairStatusSchema,
@@ -317,13 +269,11 @@ export const FairExhibitorRowSchema = z.object({
 
   contractSignedAt: z.string().datetime().nullable(),
 
-  // ✅ pagamento agregado (novo shape)
+  // ✅ NOVO: observações internas do admin no vínculo Owner ↔ Fair
+  observations: z.string().nullable().optional(),
+
   payment: AggregatedPaymentSchema,
-
-  // ✅ detalhe por compra
   purchasesPayments: z.array(PurchasePaymentSummarySchema),
-
-  // ✅ opcional para UI: lista de StallFair com purchase consumida
   stallFairs: z.array(FairStallFairItemSchema),
 
   contract: FairExhibitorContractSchema,
@@ -378,7 +328,27 @@ export const UpdateExhibitorStatusInputSchema = z.object({
 })
 export type UpdateExhibitorStatusInput = z.infer<typeof UpdateExhibitorStatusInputSchema>
 
-export const UpdateExhibitorStatusResponseSchema = z.object({
+/**
+ * Informações explicativas quando o backend:
+ * - ajusta o status aplicado
+ * - indica pendências (missing)
+ * - inclui notas (notes) para UI (toast/banner)
+ */
+export const OwnerFairStatusInfoSchema = z.object({
+  requestedStatus: OwnerFairStatusSchema.optional(),
+  appliedStatus: OwnerFairStatusSchema.optional(),
+  computedStatus: OwnerFairStatusSchema.optional(),
+
+  notes: z.array(z.string()).optional(),
+  missing: z.array(z.string()).optional(),
+})
+export type OwnerFairStatusInfo = z.infer<typeof OwnerFairStatusInfoSchema>
+
+/**
+ * Resumo do OwnerFair devolvido em mutations.
+ * Motivo: front não deve depender do shape inteiro do Prisma.
+ */
+export const OwnerFairSummarySchema = z.object({
   id: z.string(), // ownerFairId
   ownerId: z.string(),
   fairId: z.string(),
@@ -388,8 +358,16 @@ export const UpdateExhibitorStatusResponseSchema = z.object({
 
   contractSignedAt: z.string().datetime().nullable().optional(),
 
+  observations: z.string().nullable().optional(),
+
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+})
+export type OwnerFairSummary = z.infer<typeof OwnerFairSummarySchema>
+
+export const UpdateExhibitorStatusResponseSchema = z.object({
+  ownerFair: OwnerFairSummarySchema,
+  info: OwnerFairStatusInfoSchema.optional(),
 })
 export type UpdateExhibitorStatusResponse = z.infer<typeof UpdateExhibitorStatusResponseSchema>
 
@@ -400,10 +378,6 @@ export type UpdateExhibitorStatusResponse = z.infer<typeof UpdateExhibitorStatus
 export const SettleInstallmentsActionSchema = z.enum(["SET_PAID", "SET_UNPAID"])
 export type SettleInstallmentsAction = z.infer<typeof SettleInstallmentsActionSchema>
 
-/**
- * ✅ Agora settle precisa saber qual COMPRA será afetada.
- * O backend vai trabalhar nas parcelas daquela purchase.
- */
 export const SettleInstallmentsInputSchema = z
   .object({
     purchaseId: z.string().min(1, "purchaseId é obrigatório."),
@@ -412,18 +386,7 @@ export const SettleInstallmentsInputSchema = z
     payAll: z.boolean().optional(),
     numbers: z.array(z.number().int().positive()).optional(),
 
-    /**
-     * Data do pagamento (date-only).
-     * O backend normaliza pra 00:00Z.
-     */
     paidAt: DateOnlySchema.optional(),
-
-    /**
-     * Para o atalho, geralmente não precisamos.
-     * Se você quiser que o backend use esse valor como pagamento "fixo" no SET_PAID,
-     * pode manter aqui — mas na abordagem com histórico,
-     * o ideal é o atalho quitar o restante automaticamente.
-     */
     paidAmountCents: z.number().int().positive().optional(),
   })
   .refine((v) => v.payAll === true || (Array.isArray(v.numbers) && v.numbers.length > 0), {
@@ -438,10 +401,12 @@ export const SettleInstallmentsResponseSchema = z.object({
   status: OwnerFairPaymentStatusSchema,
   installmentsCount: z.number(),
   paidCount: z.number(),
-
-  // ✅ o backend retorna hoje
   paidCents: z.number(),
   totalCents: z.number(),
+
+  // ✅ NOVO: backend pode recalcular o status do expositor automaticamente
+  ownerFairStatus: OwnerFairStatusSchema.nullable().optional(),
+  ownerFairStatusInfo: OwnerFairStatusInfoSchema.nullable().optional(),
 })
 export type SettleInstallmentsResponse = z.infer<typeof SettleInstallmentsResponseSchema>
 
@@ -466,11 +431,6 @@ export const CreateInstallmentPaymentInputSchema = z.object({
 })
 export type CreateInstallmentPaymentInput = z.infer<typeof CreateInstallmentPaymentInputSchema>
 
-/**
- * Resposta padronizada para ações em parcela:
- * - create payment
- * - reschedule
- */
 export const InstallmentPaymentActionResponseSchema = z.object({
   ok: z.boolean(),
 
@@ -486,13 +446,45 @@ export const InstallmentPaymentActionResponseSchema = z.object({
   installmentPaidAmountCents: z.number(),
   installmentPaidAt: z.string().datetime().nullable(),
   installmentDueDate: z.string().datetime(),
+
+  // ✅ NOVO: backend pode recalcular o status do expositor automaticamente
+  ownerFairStatus: OwnerFairStatusSchema.nullable().optional(),
+  ownerFairStatusInfo: OwnerFairStatusInfoSchema.nullable().optional(),
 })
 export type InstallmentPaymentActionResponse = z.infer<
   typeof InstallmentPaymentActionResponseSchema
 >
 
 /** =========================
- * HELPERS
+ * OBSERVATIONS (OwnerFair)
+ * ========================= */
+
+export const UpdateExhibitorObservationsInputSchema = z.object({
+  observations: z.string().max(2000).nullable().optional(),
+})
+export type UpdateExhibitorObservationsInput = z.infer<
+  typeof UpdateExhibitorObservationsInputSchema
+>
+
+export const UpdateExhibitorObservationsResponseSchema = z.object({
+  ownerFair: z.object({
+    id: z.string(),
+    ownerId: z.string().optional(),
+    fairId: z.string().optional(),
+    observations: z.string().nullable().optional(),
+    updatedAt: z.string().datetime().optional(),
+    createdAt: z.string().datetime().optional(),
+    status: OwnerFairStatusSchema.optional(),
+    stallsQty: z.number().optional(),
+  }),
+})
+
+export type UpdateExhibitorObservationsResponse = z.infer<
+  typeof UpdateExhibitorObservationsResponseSchema
+>
+
+/** =========================
+ * HELPERS (UI)
  * ========================= */
 
 export function exhibitorDisplayName(row: FairExhibitorRow) {
@@ -539,9 +531,6 @@ export function stallSizeLabel(size: StallSize) {
   }
 }
 
-/**
- * "paid/total" das parcelas de uma compra (ex.: 1/3).
- */
 export function purchaseInstallmentsLabel(p: PurchasePaymentSummary) {
   return `${p.paidCount}/${p.installmentsCount}`
 }

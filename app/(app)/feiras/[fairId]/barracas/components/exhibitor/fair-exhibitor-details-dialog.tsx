@@ -4,14 +4,14 @@
  * Modal de detalhes do expositor (no contexto da feira).
  * Responsabilidade:
  * - Layout “premium” (header fixo + conteúdo rolável)
- * - Tabs: Dados (expositor) e Barracas (vinculadas)
- * - Acesso rápido para “Alterar status” (abre ChangeExhibitorStatusDialog)
+ * - Tabs: Dados (expositor), Barracas (vinculadas) e ✅ Observações
+ * - Acesso rápido para “Alterar status”
  *
  * Importante:
- * - NÃO retornar antes dos hooks (evita "Rendered more hooks than during the previous render")
+ * - NÃO retornar antes dos hooks
  */
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 
 import {
   Dialog,
@@ -35,6 +35,7 @@ import {
   Store,
   Users,
   Cpu,
+  NotebookPen,
 } from "lucide-react"
 
 import type { FairExhibitorRow, StallType } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
@@ -44,13 +45,14 @@ import {
 } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
 
 import { ChangeExhibitorStatusDialog } from "./change-exhibitor-status-dialog"
+import { ExhibitorObservationsTab } from "./exhibitor-observations-tab"
 
 type Props = {
   fairId: string
   open: boolean
   onOpenChange: (open: boolean) => void
   row: FairExhibitorRow | null
-  initialTab?: "dados" | "barracas"
+  initialTab?: "dados" | "barracas" | "observacoes"
 }
 
 function isFilled(v?: string | null) {
@@ -75,18 +77,12 @@ function stallTypeLabel(type: StallType) {
   }
 }
 
-/**
- * Formata strings tipo "COMIDA_JAPONESA" ou "COMIDA-JAPONESA" para:
- * "Comida japonesa"
- */
 function formatCategoryLabel(input?: string | null) {
   if (!input?.trim()) return "—"
   const normalized = input
     .trim()
     .replace(/[_-]+/g, " ")
     .toLowerCase()
-
-  // primeira letra maiúscula
   return normalized.charAt(0).toUpperCase() + normalized.slice(1)
 }
 
@@ -164,14 +160,7 @@ function SectionCard({
   )
 }
 
-/** Tile quadrado laranja claro (mesmo “clima” do print) */
-function AmberSquare({
-  icon,
-  label,
-}: {
-  icon: React.ReactNode
-  label: string
-}) {
+function AmberSquare({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
     <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
       <div className="flex items-center gap-2 text-amber-900">
@@ -189,7 +178,7 @@ export function FairExhibitorDetailsDialog({
   row,
   initialTab = "dados",
 }: Props) {
-  const [tab, setTab] = useState<"dados" | "barracas">(initialTab)
+  const [tab, setTab] = useState<"dados" | "barracas" | "observacoes">(initialTab)
   const [statusOpen, setStatusOpen] = useState(false)
 
   useEffect(() => {
@@ -229,7 +218,6 @@ export function FairExhibitorDetailsDialog({
                     </Badge>
                   </DialogTitle>
 
-                  {/* doc discreto */}
                   <div className="text-sm text-muted-foreground font-mono truncate">
                     {document}
                   </div>
@@ -248,7 +236,8 @@ export function FairExhibitorDetailsDialog({
 
               <Separator className="mt-5" />
 
-              <TabsList className="mt-4 grid w-full grid-cols-2">
+              {/* ✅ agora são 3 abas */}
+              <TabsList className="mt-4 grid w-full grid-cols-3">
                 <TabsTrigger value="dados" className="gap-2">
                   <CalendarDays className="h-4 w-4" />
                   Dados
@@ -258,6 +247,11 @@ export function FairExhibitorDetailsDialog({
                   <Store className="h-4 w-4" />
                   Barracas
                 </TabsTrigger>
+
+                <TabsTrigger value="observacoes" className="gap-2">
+                  <NotebookPen className="h-4 w-4" />
+                  Observações
+                </TabsTrigger>
               </TabsList>
             </DialogHeader>
 
@@ -265,6 +259,7 @@ export function FairExhibitorDetailsDialog({
             <div className="h-full px-6 pt-0">
               {/* TAB 1: DADOS */}
               <TabsContent value="dados" className="mt-0 space-y-5">
+                {/* ... seu conteúdo existente ... */}
                 <SectionCard
                   title="Identificação e contato"
                   icon={<CalendarDays className="h-4 w-4" />}
@@ -298,11 +293,7 @@ export function FairExhibitorDetailsDialog({
                   </div>
                 </SectionCard>
 
-                <SectionCard
-                  title="Endereço"
-                  icon={<MapPin className="h-4 w-4" />}
-                  tone="violet"
-                >
+                <SectionCard title="Endereço" icon={<MapPin className="h-4 w-4" />} tone="violet">
                   <InfoTile
                     icon={<MapPin className="h-4 w-4" />}
                     label="Endereço completo"
@@ -310,11 +301,7 @@ export function FairExhibitorDetailsDialog({
                   />
                 </SectionCard>
 
-                <SectionCard
-                  title="Pagamento"
-                  icon={<CreditCard className="h-4 w-4" />}
-                  tone="emerald"
-                >
+                <SectionCard title="Pagamento" icon={<CreditCard className="h-4 w-4" />} tone="emerald">
                   <InfoTile
                     icon={<CreditCard className="h-full w-full " />}
                     label="Banco"
@@ -353,6 +340,7 @@ export function FairExhibitorDetailsDialog({
 
               {/* TAB 2: BARRACAS */}
               <TabsContent value="barracas" className="mt-0 space-y-5">
+                {/* ... seu conteúdo existente ... */}
                 <SectionCard
                   title={`Barracas vinculadas (${linkedCount})`}
                   icon={<Store className="h-4 w-4" />}
@@ -374,7 +362,6 @@ export function FairExhibitorDetailsDialog({
                             key={stall.id}
                             className="rounded-2xl border bg-background p-4"
                           >
-                            {/* Topo: nome + (tipo formatado da categoria) */}
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="text-sm font-semibold truncate">
@@ -382,7 +369,6 @@ export function FairExhibitorDetailsDialog({
                                 </div>
                               </div>
 
-                              {/* mantém badge na direita (opcional) */}
                               <Badge variant="secondary" className="rounded-full shrink-0">
                                 {categoryLabel}
                               </Badge>
@@ -404,9 +390,8 @@ export function FairExhibitorDetailsDialog({
                             <Separator className="my-3" />
 
                             <div className="flex justify-between sm:flex-row sm:items-center sm:justify-between">
-
                               <div className="text-sm flex flex-col">
-                                <div  className="flex items-center gap-2">
+                                <div className="flex items-center gap-2">
                                   <Store className="h-4 w-4 text-muted-foreground text-sm " />
                                   <span className="text-muted-foreground">Banner</span>
                                 </div>
@@ -429,19 +414,31 @@ export function FairExhibitorDetailsDialog({
                                 <div className="flex items-center gap-2">
                                   <Users className=" text-sm  h-4 w-4 text-muted-foreground" />
                                   <span className="text-sm  text-muted-foreground">Equipe</span>
-
                                 </div>
                                 <span className="font-semibold">
                                   {String(stall.teamQty ?? 0)}
                                 </span>
                               </div>
-
                             </div>
                           </div>
                         )
                       })}
                     </div>
                   )}
+                </SectionCard>
+
+                <br />
+              </TabsContent>
+
+              {/* ✅ TAB 3: OBSERVAÇÕES */}
+              <TabsContent value="observacoes" className="mt-0 space-y-5">
+                <SectionCard
+                  title="Observações internas"
+                  icon={<NotebookPen className="h-4 w-4" />}
+                  tone="violet"
+                >
+                  {/* ✅ toda lógica isolada no componente */}
+                  <ExhibitorObservationsTab fairId={fairId} row={row} />
                 </SectionCard>
 
                 <br />

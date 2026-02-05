@@ -1,15 +1,3 @@
-/**
- * Camada TanStack Query para Expositores da Feira (Admin).
- * Motivo: padronizar cache keys e facilitar invalidações.
- *
- * Atualização (novo financeiro por compra):
- * - Mantemos query de listagem
- * - Mantemos mutation de status
- * - Mantemos mutation "settle" (atalho) agora por purchaseId
- * - Adicionamos:
- *   - mutation para registrar pagamento parcial (histórico)
- *   - mutation para reprogramar vencimento
- */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   listFairExhibitors,
@@ -17,12 +5,19 @@ import {
   settleFairExhibitorInstallments,
   createInstallmentPayment,
   reschedulePurchaseInstallment,
+
+  // ✅ NOVO
+  updateFairExhibitorObservations,
 } from "./exhibitors.service"
+
 import type {
   OwnerFairStatus,
   SettleInstallmentsInput,
   CreateInstallmentPaymentInput,
   RescheduleInstallmentInput,
+
+  // ✅ NOVO
+  UpdateExhibitorObservationsInput,
 } from "./exhibitors.schema"
 
 export const fairExhibitorsQueryKeys = {
@@ -43,7 +38,6 @@ export function useFairExhibitorsQuery(fairId: string) {
 
 /**
  * PATCH /fairs/:fairId/exhibitors/:ownerId/status
- * Invalida a lista da feira para refletir o status atualizado na tabela.
  */
 export function useUpdateFairExhibitorStatusMutation(fairId: string) {
   const qc = useQueryClient()
@@ -63,11 +57,29 @@ export function useUpdateFairExhibitorStatusMutation(fairId: string) {
 }
 
 /**
+ * ✅ PATCH /fairs/:fairId/exhibitors/:ownerId/observations
+ * Observação:
+ * - Sempre invalidamos a listagem, pois ela contém row.observations.
+ */
+export function useUpdateFairExhibitorObservationsMutation(fairId: string) {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: (vars: { ownerId: string; input: UpdateExhibitorObservationsInput }) =>
+      updateFairExhibitorObservations({
+        fairId,
+        ownerId: vars.ownerId,
+        input: vars.input,
+      }),
+
+    onSettled: async () => {
+      await qc.invalidateQueries({ queryKey: fairExhibitorsQueryKeys.list(fairId) })
+    },
+  })
+}
+
+/**
  * PATCH /fairs/:fairId/exhibitors/:ownerId/payment/installments/settle
- * Responsabilidade:
- * - Atalho para baixar/desfazer parcelas de UMA compra (purchaseId).
- * Decisão:
- * - Sempre invalidar a listagem depois (backend é fonte de verdade).
  */
 export function useSettleInstallmentsMutation(fairId: string) {
   const qc = useQueryClient()
@@ -88,8 +100,6 @@ export function useSettleInstallmentsMutation(fairId: string) {
 
 /**
  * POST /fairs/:fairId/exhibitors/:ownerId/purchases/:purchaseId/installments/:number/payments
- * Responsabilidade:
- * - Registrar pagamento parcial (histórico) em uma parcela.
  */
 export function useCreateInstallmentPaymentMutation(fairId: string) {
   const qc = useQueryClient()
@@ -117,8 +127,6 @@ export function useCreateInstallmentPaymentMutation(fairId: string) {
 
 /**
  * PATCH /fairs/:fairId/exhibitors/:ownerId/purchases/:purchaseId/installments/:number/reschedule
- * Responsabilidade:
- * - Reprogramar vencimento (dueDate) de uma parcela.
  */
 export function useRescheduleInstallmentMutation(fairId: string) {
   const qc = useQueryClient()
