@@ -1,21 +1,35 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import type { OwnerFairStatus } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
-import { Layers3, Users, CheckCircle2, Store, ChevronDown } from "lucide-react"
+import {
+  Layers3,
+  Users,
+  CheckCircle2,
+  Store,
+  ChevronDown,
+  HandCoins,
+} from "lucide-react"
 import { OwnerFairStatusCountBadge } from "./table/owner-fair-status-badges"
 
 /**
  * Cards de KPI do dashboard de barracas.
  * Responsabilidade:
- * - Mostrar visão rápida e fácil de entender (sem excesso de texto)
+ * - Mostrar uma visão rápida e fácil de entender (sem excesso de texto)
+ * - Consolidar indicadores de capacidade, status, conclusão e financeiro
  *
- * Ajustes desta iteração:
- * - Header inteiro clicável
- * - Chevron com animação (gira ao abrir/fechar)
- * - Estado global: abrir 1 abre todos / fechar 1 fecha todos
+ * Decisões:
+ * - Mantemos layout de "cards accordion" para reduzir ruído visual
+ * - O estado de abrir/fechar é global (abrir 1 abre todos / fechar 1 fecha todos)
+ * - Valores financeiros são recebidos já agregados em cents (inteiros), evitando problemas de float
+ *
+ * Ajustes desta iteração (UI):
+ * - Grid em 3 colunas (fica menos largo e mais equilibrado)
+ * - Cards com altura mínima controlada (evita “esticado”)
+ * - Espaçamentos internos reduzidos (mais compacto e menos “vazio”)
+ * - Financeiro com hero menor + rows mais compactas
  */
 export function StallsKpiCards({
   kpis,
@@ -30,6 +44,12 @@ export function StallsKpiCards({
 
     doneExhibitors: number
     statusCounts: Record<OwnerFairStatus, number>
+
+    // ✅ financeiro
+    totalSoldCents: number
+    totalPaidCents: number
+    totalOpenCents: number
+    overdueOpenCents: number
   }
 }) {
   const stallsCap = kpis.stallsCapacity ?? null
@@ -50,8 +70,18 @@ export function StallsKpiCards({
    */
   const [openAll, setOpenAll] = useState(true)
 
+  // ✅ Financeiro (em cents)
+  const soldCents = kpis.totalSoldCents ?? 0
+  const paidCents = kpis.totalPaidCents ?? 0
+  const openCents = kpis.totalOpenCents ?? Math.max(0, soldCents - paidCents)
+  const overdueCents = kpis.overdueOpenCents ?? 0
+
+  const paidPct = soldCents > 0 ? Math.min(1, paidCents / soldCents) : 0
+  const paidPctLabel = soldCents > 0 ? `${Math.round(paidPct * 100)}%` : "—"
+
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    // ✅ 3 colunas em telas grandes (menos largo / mais equilibrado)
+    <div className="grid gap-4 lg:grid-cols-4">
       {/* 1) Capacidade */}
       <AccordionKpiCard
         accent="blue"
@@ -61,9 +91,17 @@ export function StallsKpiCards({
         onToggle={() => setOpenAll((v) => !v)}
       >
         <div className="space-y-2">
-          <MiniStat icon={<Store className="h-4 w-4" />} label="Barracas vinculadas" value={stallsLabel} />
+          <MiniStat
+            icon={<Store className="h-4 w-4" />}
+            label="Barracas vinculadas"
+            value={stallsLabel}
+          />
 
-          <MiniStat icon={<Users className="h-4 w-4" />} label="Expositores vinculados" value={exhibitorsLabel} />
+          <MiniStat
+            icon={<Users className="h-4 w-4" />}
+            label="Expositores vinculados"
+            value={exhibitorsLabel}
+          />
 
           <MiniStat
             icon={<Store className="h-4 w-4" />}
@@ -106,6 +144,50 @@ export function StallsKpiCards({
         </div>
       </AccordionKpiCard>
 
+      {/* 4) Financeiro */}
+      <AccordionKpiCard
+        accent="orange"
+        title="Financeiro"
+        icon={<HandCoins className="h-4 w-4" />}
+        isOpen={openAll}
+        onToggle={() => setOpenAll((v) => !v)}
+      >
+        {/* ✅ Mais compacto: menos espaço vertical */}
+        <div className="space-y-4">
+          {/* HERO compacto */}
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground">Recebido</div>
+
+            <div className="text-2xl font-semibold tracking-tight tabular-nums">
+              {formatMoneyBRLFromCents(paidCents)}
+            </div>
+
+            <div className="text-xs text-muted-foreground">
+              {paidPctLabel} do total ({formatMoneyBRLFromCents(soldCents)})
+            </div>
+          </div>
+
+          {/* PROGRESSO compacto */}
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Pago</span>
+              <span className="tabular-nums">
+                {formatMoneyBRLFromCents(paidCents)} / {formatMoneyBRLFromCents(soldCents)}
+              </span>
+            </div>
+
+            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full bg-foreground/70 transition-all"
+                style={{ width: `${paidPct * 100}%` }}
+              />
+            </div>
+          </div>
+
+
+        </div>
+      </AccordionKpiCard>
+
       {/* 3) Concluídos */}
       <AccordionKpiCard
         accent="emerald"
@@ -127,10 +209,8 @@ export function StallsKpiCards({
             <div className="text-sm font-medium text-muted-foreground">{donePctLabel}</div>
           </div>
 
-          {/* progress compacto */}
           <SlimProgress value={donePct} />
 
-          {/* ✅ mini-card compacto (não aumenta o card) */}
           <MiniStatCompact
             label="Barracas"
             sub="vinculadas / compradas"
@@ -139,6 +219,56 @@ export function StallsKpiCards({
         </div>
       </AccordionKpiCard>
 
+
+    </div>
+  )
+}
+
+/**
+ * Formata centavos para BRL.
+ * Mantemos aqui para o KPI ser auto-suficiente e evitar “contrato implícito” com outras libs.
+ */
+function formatMoneyBRLFromCents(cents: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format((cents ?? 0) / 100)
+}
+
+/**
+ * Linha de estatística "limpa" para o Financeiro.
+ * Responsabilidade:
+ * - Dar clareza ao label/valor sem virar uma lista apertada.
+ * - Quando danger=true, destacamos com cor/contorno de alerta.
+ *
+ * Ajuste desta iteração:
+ * - padding menor (px-3 py-2) para reduzir altura geral
+ */
+function StatRow({
+  label,
+  value,
+  sub,
+  danger,
+}: {
+  label: string
+  value: string
+  sub?: string
+  danger?: boolean
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between rounded-xl border px-3 py-2",
+        "bg-muted/10",
+        danger ? "border-destructive/40 text-destructive" : "",
+      )}
+    >
+      <div className="min-w-0">
+        <div className="text-sm font-medium truncate">{label}</div>
+        {sub ? <div className="text-xs text-muted-foreground truncate">{sub}</div> : null}
+      </div>
+
+      <div className="text-sm font-semibold tabular-nums">{value}</div>
     </div>
   )
 }
@@ -168,12 +298,15 @@ function MiniStatCompact({
   )
 }
 
-
 /**
  * Card que abre/fecha clicando no header inteiro.
  * Regra:
  * - o estado é controlado externamente (isOpen)
  * - clicar em qualquer card alterna "todos"
+ *
+ * Ajustes desta iteração:
+ * - min-h controlado para evitar cards “esticados”
+ * - padding do header reduzido (mais compacto)
  */
 function AccordionKpiCard({
   title,
@@ -191,9 +324,15 @@ function AccordionKpiCard({
   children: React.ReactNode
 }) {
   return (
-    <Card className={cn("border-muted/60 shadow-sm", accentBorderClass(accent))}>
+    <Card
+      className={cn(
+        "border-muted/60 shadow-sm",
+        "w-full", // ✅ controla altura para evitar “esticado”
+        accentBorderClass(accent),
+      )}
+    >
       <CardHeader
-        className="pb-2 select-none cursor-pointer"
+        className="pb-1 pt-4 select-none cursor-pointer"
         role="button"
         tabIndex={0}
         onClick={onToggle}
@@ -202,11 +341,8 @@ function AccordionKpiCard({
         }}
         title={isOpen ? "Clique para recolher" : "Clique para expandir"}
       >
-        {/* Header inteiro clicável + Chevron com animação */}
         <CardTitle className="flex items-center justify-between text-sm font-medium text-muted-foreground">
-          <span className="flex items-center gap-2">
-            {title}
-          </span>
+          <span className="flex items-center gap-2">{title}</span>
 
           <span className="flex items-center gap-2 text-muted-foreground/70">
             {icon}
@@ -221,8 +357,7 @@ function AccordionKpiCard({
         </CardTitle>
       </CardHeader>
 
-      {/* conteúdo abre/fecha */}
-      {isOpen ? <CardContent className="pt-1">{children}</CardContent> : null}
+      {isOpen ? <CardContent className="pt-2">{children}</CardContent> : null}
     </Card>
   )
 }
