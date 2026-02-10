@@ -6,8 +6,6 @@ import { z } from "zod"
 
 /**
  * Item completo retornado pelo GET /interests (painel).
- * Decisão: o backend já entrega todos os dados para o modal,
- * evitando outra chamada.
  */
 export const InterestListItemSchema = z.object({
   id: z.string(),
@@ -34,21 +32,12 @@ export const InterestListItemSchema = z.object({
   stallsDescription: z.string().nullable().optional(),
 
   /**
-   * ✅ NOVO
-   * Indica se o interessado já possui acesso ao portal do expositor
-   * com login/senha definidos.
-   *
-   * - true  => acesso ativo
-   * - false => acesso ainda não liberado ou senha não criada
-   * - undefined => backend ainda não implementou
+   * ✅ Indica se já existe login (passwordSetAt != null)
    */
   hasPortalLogin: z.boolean().optional(),
 
   /**
-   * ✅ NOVO
-   * Quantidade de barracas cadastradas pelo expositor.
-   *
-   * Obs.: valor calculado no backend (COUNT).
+   * ✅ Quantidade de barracas cadastradas
    */
   stallsCount: z.number().int().min(0).optional(),
 
@@ -84,7 +73,51 @@ export type InterestsFilters = {
 }
 
 /**
- * Helpers de apresentação (1 lugar para regra de exibição).
+ * Payload aceito no POST /interests/:ownerId/portal-access
+ */
+export const GrantPortalAccessPayloadSchema = z.object({
+  expiresInMinutes: z.union([z.literal(30), z.literal(60)]).optional(),
+  type: z.enum(["ACTIVATE_ACCOUNT", "RESET_PASSWORD"]).optional(),
+})
+
+export type GrantPortalAccessPayload = z.infer<typeof GrantPortalAccessPayloadSchema>
+
+/**
+ * Resposta do POST /interests/:ownerId/portal-access
+ *
+ * ✅ Ajuste importante:
+ * - Agora inclui `token` (raw) para o admin copiar e repassar.
+ */
+export const GrantPortalAccessResponseSchema = z.object({
+  ownerId: z.string(),
+  userId: z.string(),
+  tokenType: z.enum(["ACTIVATE_ACCOUNT", "RESET_PASSWORD"]),
+  expiresAt: z.string(),
+  activationLink: z.string().url(),
+  token: z.string(), // ✅ novo
+})
+
+export type GrantPortalAccessResponse = z.infer<typeof GrantPortalAccessResponseSchema>
+
+/**
+ * Resposta do POST /interests/:ownerId/password-reset-token
+ * (atalho no admin)
+ *
+ * Se você manter esse endpoint separado, padronizamos o contrato para:
+ * - token (raw)
+ * - expiresAt
+ * - resetUrl
+ */
+export const PasswordResetTokenResponseSchema = z.object({
+  token: z.string(),
+  expiresAt: z.string(),
+  resetUrl: z.string().url(),
+})
+
+export type PasswordResetTokenResponse = z.infer<typeof PasswordResetTokenResponseSchema>
+
+/**
+ * Helpers de apresentação.
  */
 export function interestDisplayName(i: InterestListItem) {
   return i.fullName?.trim() || "-"
@@ -101,10 +134,6 @@ export function interestDisplayDate(i: InterestListItem) {
   return i.updatedAt ?? i.createdAt
 }
 
-/**
- * ✅ Helper novo (opcional)
- * Centraliza a lógica de exibição do status de acesso.
- */
 export function interestAccessLabel(i: InterestListItem) {
   if (typeof i.hasPortalLogin !== "boolean") return "—"
   return i.hasPortalLogin ? "Com login" : "Sem login"
