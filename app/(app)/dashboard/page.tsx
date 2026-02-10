@@ -1,7 +1,14 @@
-import { Settings, Users, Wallet, FileText } from "lucide-react";
-import { DashboardTile } from "./components/dashboard-tile";
-import { FairsDashboardTile } from "./components/fairs/fairs-dashboard-tile";
+// app/(app)/page.tsx (ou onde está seu DashboardPage)
+import { Settings, Users, Wallet, FileText, FileSpreadsheet } from "lucide-react"
+import { DashboardTile } from "./components/dashboard-tile"
+import { FairsDashboardTile } from "./components/fairs/fairs-dashboard-tile"
 
+/**
+ * Página inicial do painel (Dashboard).
+ * Responsabilidade:
+ * - Exibir atalhos rápidos para as áreas principais do sistema
+ * - Manter cards/titles consistentes e fáceis de escanear visualmente
+ */
 export default function DashboardPage() {
   return (
     <div className="space-y-4 p-6">
@@ -13,7 +20,6 @@ export default function DashboardPage() {
       </header>
 
       <div className="grid auto-rows-fr grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-
         {/* 1) Feiras */}
         <FairsDashboardTile />
 
@@ -43,6 +49,19 @@ export default function DashboardPage() {
           </p>
         </DashboardTile>
 
+        {/* ✅ NOVO) Relatórios (Excel) */}
+        <DashboardTile
+          title="Relatórios (Excel)"
+          description="Templates e exportações para feiras e expositores"
+          href="/excel"
+          icon={<FileSpreadsheet className="h-5 w-5" />}
+          accentClassName="bg-teal-500"
+        >
+          <p className="text-xs text-muted-foreground">
+            Monte templates e gere planilhas .xlsx.
+          </p>
+        </DashboardTile>
+
         {/* 4) Financeiro */}
         <DashboardTile
           title="Financeiro"
@@ -68,8 +87,7 @@ export default function DashboardPage() {
             Feiras, formulários, usuários e permissões.
           </p>
         </DashboardTile>
-
       </div>
     </div>
-  );
+  )
 }

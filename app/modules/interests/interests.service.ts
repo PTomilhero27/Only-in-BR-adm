@@ -6,9 +6,15 @@ import {
   InterestsListResponseSchema,
   type InterestsFilters,
   type InterestsListResponse,
+  GrantPortalAccessPayloadSchema,
+  type GrantPortalAccessPayload,
+  GrantPortalAccessResponseSchema,
+  type GrantPortalAccessResponse,
+  PasswordResetTokenResponseSchema,
+  type PasswordResetTokenResponse,
 } from "./interests.schema"
+
 import { api } from "@/app/shared/http/api"
-import { z } from "zod"
 
 /**
  * Monta a query string apenas com params definidos.
@@ -36,40 +42,37 @@ export async function listInterests(filters: InterestsFilters): Promise<Interest
 }
 
 /**
- * Payload para gerar link temporário de acesso ao portal do expositor.
- * Decisão:
- * - expiresInMinutes restrito a 30/60
- * - type preparado para reuso futuro (RESET_PASSWORD)
- */
-export type GrantPortalAccessPayload = {
-  expiresInMinutes?: 30 | 60
-  type?: "ACTIVATE_ACCOUNT" | "RESET_PASSWORD"
-}
-
-/**
- * Resposta do backend ao gerar link temporário.
- * Motivo: garantir contrato estável no modal.
- */
-export const GrantPortalAccessResponseSchema = z.object({
-  ownerId: z.string(),
-  userId: z.string(),
-  tokenType: z.enum(["ACTIVATE_ACCOUNT", "RESET_PASSWORD"]),
-  expiresAt: z.string(),
-  activationLink: z.string().url(),
-})
-
-export type GrantPortalAccessResponse = z.infer<typeof GrantPortalAccessResponseSchema>
-
-/**
- * Gera link temporário para o expositor criar senha (primeiro acesso) ou recuperar senha (futuro).
+ * Gera link temporário para o expositor criar senha (primeiro acesso) ou recuperar senha.
  *
  * Importante:
  * - Endpoint autenticado (painel).
- * - Retorna link com token "raw" para copiar/compartilhar.
+ * - Retorna link + token raw para copiar/compartilhar.
  */
 export async function grantPortalAccess(
   ownerId: string,
   payload: GrantPortalAccessPayload = { expiresInMinutes: 60, type: "ACTIVATE_ACCOUNT" },
 ): Promise<GrantPortalAccessResponse> {
-  return api.post(`interests/${ownerId}/portal-access`, payload )
+  // ✅ valida payload localmente para evitar mandar lixo pro backend
+  const parsed = GrantPortalAccessPayloadSchema.parse(payload)
+
+  return api.post(
+    `interests/${ownerId}/portal-access`,
+    parsed
+  )
+}
+
+/**
+ * Atalho do admin: gera token/link de reset de senha.
+ *
+ * Observação:
+ * - Esse endpoint é opcional; você poderia usar grantPortalAccess com type=RESET_PASSWORD.
+ * - Mantemos porque facilita o botão "Resetar senha" na UI.
+ */
+export async function createPasswordResetToken(
+  ownerId: string,
+): Promise<PasswordResetTokenResponse> {
+  return api.post(
+    `interests/${ownerId}/password-reset-token`,
+    {}
+  )
 }
