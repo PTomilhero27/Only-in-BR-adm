@@ -207,7 +207,7 @@ export type ExcelTemplateSheetInput = z.infer<typeof ExcelTemplateSheetInputSche
 export const CreateExcelTemplateInputSchema = z.object({
   name: z.string().min(1),
   status: ExcelTemplateStatusSchema.optional(),
-  sheets: z.array(ExcelTemplateSheetInputSchema).optional(),
+  sheets: z.array(ExcelTemplateSheetInputSchema).min(1, "Informe pelo menos 1 aba."),
 })
 export type CreateExcelTemplateInput = z.infer<typeof CreateExcelTemplateInputSchema>
 

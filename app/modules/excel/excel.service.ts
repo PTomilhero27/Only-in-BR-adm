@@ -68,20 +68,35 @@ export async function listExcelDatasetFields(dataset: string): Promise<ExcelData
  * GET /excel-templates
  */
 export async function listExcelTemplates(): Promise<ExcelTemplatesListResponse> {
-  return api.get("excel-templates", ExcelTemplatesListResponseSchema)
+  const data = await api.get("excel-templates")
+
+  // ✅ normaliza formatos possíveis
+  const normalized = Array.isArray(data) ? { items: data } : data
+
+  return ExcelTemplatesListResponseSchema.parse(normalized)
 }
 
 /**
  * GET /excel-templates/:id
+ * ✅ normaliza: backend pode retornar direto o template (sem wrapper { template })
  */
 export async function getExcelTemplate(templateId: string): Promise<ExcelTemplateGetResponse> {
-  return api.get(`excel-templates/${templateId}`, ExcelTemplateGetResponseSchema)
+  const data = await api.get(`excel-templates/${templateId}`)
+
+  const normalized =
+    data && typeof data === "object" && "template" in (data as any)
+      ? data
+      : { template: data }
+
+  return ExcelTemplateGetResponseSchema.parse(normalized)
 }
 
 /**
  * POST /excel-templates
  */
-export async function createExcelTemplate(input: CreateExcelTemplateInput): Promise<CreateExcelTemplateResponse> {
+export async function createExcelTemplate(
+  input: CreateExcelTemplateInput,
+): Promise<CreateExcelTemplateResponse> {
   const payload = CreateExcelTemplateInputSchema.parse(input)
 
   const data = await api.post("excel-templates", payload)
@@ -131,27 +146,12 @@ export async function deleteExcelTemplate(templateId: string): Promise<DeleteExc
  * POST /excel-exports
  * Retorna arquivo .xlsx (Blob) — não retorna JSON.
  *
- * Importante:
- * - Como seu wrapper `api` normalmente parseia JSON, aqui usamos `fetch` direto.
- * - Mantemos o input validado com Zod.
- *
- * ✅ Como usar no front:
- * const blob = await createExcelExport({ templateId, fairId, ownerId })
- * const url = URL.createObjectURL(blob)
- * ... criar <a download> ...
+ * ✅ Se você já tiver `api.postBlob`, prefira ele.
+ * Aqui mantém fetch direto para não quebrar o parser JSON do wrapper.
  */
 export async function createExcelExport(input: CreateExcelExportInput): Promise<Blob> {
   const payload = CreateExcelExportInputSchema.parse(input)
 
-  /**
-   * Estratégia:
-   * - Reusar baseURL do api (se existir), senão cair para `process.env...`
-   * - Reusar token atual (se seu `api` expõe), senão aceitar sem token (não ideal)
-   *
-   * Ajuste fino:
-   * - Se você tiver no seu projeto algo tipo `api.getAccessToken()` ou `tokenStore.get()`,
-   *   plugue aqui para manter 100% autenticado.
-   */
   const baseUrl =
     // @ts-expect-error - nem todo wrapper expõe, mas tentamos reaproveitar se existir
     (api.baseUrl as string | undefined) ||
@@ -171,7 +171,6 @@ export async function createExcelExport(input: CreateExcelExportInput): Promise<
   })
 
   if (!res.ok) {
-    // Tentamos ler mensagem de erro (se backend retornar JSON)
     const text = await res.text().catch(() => "")
     throw new Error(text || `Falha ao gerar Excel (HTTP ${res.status}).`)
   }

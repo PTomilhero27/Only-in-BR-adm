@@ -13,6 +13,7 @@ import { ExcelTemplateUpsertDialog } from "./components/excel-template-upsert-di
 import { ExportExcelDialog } from "./components/export-excel-dialog"
 import { ExcelTemplateDeleteAlertDialog } from "./components/excel-template-delete-alert-dialog"
 import { ExcelTemplatesTable } from "./components/excel-templates-table"
+import { toast } from "@/components/ui/toast"
 
 
 
@@ -77,9 +78,18 @@ export default function ExcelTemplatesPage() {
       await createMut.mutateAsync({
         name: input.name,
         status: input.status,
-        sheets: [],
+        sheets: [
+          {
+            name: "Relatório",
+            order: 0,
+            dataset: "FAIR",
+            cells: [],
+            tables: [],
+          },
+        ],
       })
       setUpsertOpen(false)
+      toast.success({title: "Template criado com sucesso."})
       return
     }
 
