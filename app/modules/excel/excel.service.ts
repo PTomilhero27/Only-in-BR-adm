@@ -1,45 +1,40 @@
-// src/modules/excel/excel.service.ts
-import { api } from "@/app/shared/http/api"
-import {
-  ExcelDatasetsResponseSchema,
-  type ExcelDatasetsResponse,
-  ExcelDatasetSchema,
-  ExcelDatasetFieldsResponseSchema,
-  type ExcelDatasetFieldsResponse,
-
-  CreateExcelTemplateInputSchema,
-  type CreateExcelTemplateInput,
-  CreateExcelTemplateResponseSchema,
-  type CreateExcelTemplateResponse,
-
-  UpdateExcelTemplateInputSchema,
-  type UpdateExcelTemplateInput,
-  UpdateExcelTemplateResponseSchema,
-  type UpdateExcelTemplateResponse,
-
-  ExcelTemplatesListResponseSchema,
-  type ExcelTemplatesListResponse,
-
-  ExcelTemplateGetResponseSchema,
-  type ExcelTemplateGetResponse,
-
-  DeleteExcelTemplateResponseSchema,
-  type DeleteExcelTemplateResponse,
-
-  CreateExcelExportInputSchema,
-  type CreateExcelExportInput,
-} from "./excel.schema"
-
 /**
  * Excel Service (Admin)
- * Responsabilidade:
- * - Encapsular chamadas HTTP do módulo Excel
- * - Validar inputs com Zod
- * - Parsear outputs com Zod sempre que houver JSON
  *
- * Observação importante:
- * - POST /excel-exports retorna arquivo (Blob). Não há schema Zod para isso.
+ * Responsabilidade:
+ * - Centralizar chamadas do módulo Excel no painel admin
+ * - Usar o wrapper `api` (ele já injeta Authorization automaticamente)
+ * - Validar retornos com Zod quando aplicável
+ * - Exportar arquivo .xlsx como Blob via responseType: "blob"
  */
+import { api } from "@/app/shared/http/api";
+import {
+  ExcelDatasetSchema,
+  ExcelDatasetsResponseSchema,
+  ExcelDatasetFieldsResponseSchema,
+  ExcelTemplatesListResponseSchema,
+  ExcelTemplateSchema,
+  CreateExcelTemplateInputSchema,
+  UpdateExcelTemplateInputSchema,
+  CreateExcelExportInputSchema,
+  ExcelExportRequirementsResponseSchema,
+  type ExcelDatasetsResponse,
+  type ExcelDatasetFieldsResponse,
+  type ExcelTemplatesListResponse,
+  type ExcelTemplate,
+  type CreateExcelTemplateInput,
+  type UpdateExcelTemplateInput,
+  type CreateExcelExportInput,
+  type ExcelExportRequirementsResponse,
+} from "./excel.schema";
+
+/** =========================
+ * Helpers internos
+ * ========================= */
+
+function ensureArray<T>(data: unknown): T[] {
+  return Array.isArray(data) ? (data as T[]) : [];
+}
 
 /** =========================
  * DATASETS
@@ -49,15 +44,41 @@ import {
  * GET /excel/datasets
  */
 export async function listExcelDatasets(): Promise<ExcelDatasetsResponse> {
-  return api.get("excel/datasets", ExcelDatasetsResponseSchema)
+  return api.get("excel/datasets", ExcelDatasetsResponseSchema);
 }
 
 /**
  * GET /excel/datasets/:dataset/fields
  */
-export async function listExcelDatasetFields(dataset: string): Promise<ExcelDatasetFieldsResponse> {
-  const parsed = ExcelDatasetSchema.parse(dataset)
-  return api.get(`excel/datasets/${parsed}/fields`, ExcelDatasetFieldsResponseSchema)
+export async function listExcelDatasetFields(
+  dataset: string,
+): Promise<ExcelDatasetFieldsResponse> {
+  const parsed = ExcelDatasetSchema.parse(dataset);
+  return api.get(
+    `excel/datasets/${parsed}/fields`,
+    ExcelDatasetFieldsResponseSchema,
+  );
+}
+
+/** =========================
+ * EXPORT REQUIREMENTS
+ * ========================= */
+
+/**
+ * GET /excel-export-requirements/:templateId
+ *
+ * Observação:
+ * - Forçamos cache: "no-store" para evitar 304 Not Modified,
+ *   garantindo que sempre teremos um JSON para parsear.
+ */
+export async function getExcelExportRequirements(
+  templateId: string,
+): Promise<ExcelExportRequirementsResponse> {
+  return api.get(
+    `excel-export-requirements/${templateId}`,
+    ExcelExportRequirementsResponseSchema,
+    { cache: "no-store" },
+  );
 }
 
 /** =========================
@@ -68,27 +89,17 @@ export async function listExcelDatasetFields(dataset: string): Promise<ExcelData
  * GET /excel-templates
  */
 export async function listExcelTemplates(): Promise<ExcelTemplatesListResponse> {
-  const data = await api.get("excel-templates")
-
-  // ✅ normaliza formatos possíveis
-  const normalized = Array.isArray(data) ? { items: data } : data
-
-  return ExcelTemplatesListResponseSchema.parse(normalized)
+  const data = await api.get("excel-templates");
+  return ExcelTemplatesListResponseSchema.parse(ensureArray(data));
 }
 
 /**
- * GET /excel-templates/:id
- * ✅ normaliza: backend pode retornar direto o template (sem wrapper { template })
+ * GET /excel-templates/:templateId
  */
-export async function getExcelTemplate(templateId: string): Promise<ExcelTemplateGetResponse> {
-  const data = await api.get(`excel-templates/${templateId}`)
-
-  const normalized =
-    data && typeof data === "object" && "template" in (data as any)
-      ? data
-      : { template: data }
-
-  return ExcelTemplateGetResponseSchema.parse(normalized)
+export async function getExcelTemplate(
+  templateId: string,
+): Promise<ExcelTemplate> {
+  return api.get(`excel-templates/${templateId}`, ExcelTemplateSchema);
 }
 
 /**
@@ -96,46 +107,32 @@ export async function getExcelTemplate(templateId: string): Promise<ExcelTemplat
  */
 export async function createExcelTemplate(
   input: CreateExcelTemplateInput,
-): Promise<CreateExcelTemplateResponse> {
-  const payload = CreateExcelTemplateInputSchema.parse(input)
-
-  const data = await api.post("excel-templates", payload)
-
-  const normalized =
-    data && typeof data === "object" && "template" in (data as any)
-      ? data
-      : { template: data }
-
-  return CreateExcelTemplateResponseSchema.parse(normalized)
+): Promise<ExcelTemplate> {
+  const payload = CreateExcelTemplateInputSchema.parse(input);
+  const data = await api.post("excel-templates", payload);
+  return ExcelTemplateSchema.parse(data);
 }
 
 /**
- * PATCH /excel-templates/:id
- * MVP: se enviar `sheets`, o backend substitui a estrutura inteira.
+ * PATCH /excel-templates/:templateId
  */
 export async function updateExcelTemplate(params: {
-  templateId: string
-  input: UpdateExcelTemplateInput
-}): Promise<UpdateExcelTemplateResponse> {
-  const payload = UpdateExcelTemplateInputSchema.parse(params.input)
-
-  const data = await api.patch(`excel-templates/${params.templateId}`, payload)
-
-  const normalized =
-    data && typeof data === "object" && "template" in (data as any)
-      ? data
-      : { template: data }
-
-  return UpdateExcelTemplateResponseSchema.parse(normalized)
+  templateId: string;
+  input: UpdateExcelTemplateInput;
+}): Promise<ExcelTemplate> {
+  const payload = UpdateExcelTemplateInputSchema.parse(params.input);
+  const data = await api.patch(`excel-templates/${params.templateId}`, payload);
+  return ExcelTemplateSchema.parse(data);
 }
 
 /**
- * DELETE /excel-templates/:id
+ * DELETE /excel-templates/:templateId
  */
-export async function deleteExcelTemplate(templateId: string): Promise<DeleteExcelTemplateResponse> {
-  const data = await api.delete(`excel-templates/${templateId}`)
-  const normalized = data && typeof data === "object" ? data : { ok: true }
-  return DeleteExcelTemplateResponseSchema.parse(normalized)
+export async function deleteExcelTemplate(
+  templateId: string,
+): Promise<{ ok: boolean }> {
+  await api.delete(`excel-templates/${templateId}`);
+  return { ok: true };
 }
 
 /** =========================
@@ -144,36 +141,17 @@ export async function deleteExcelTemplate(templateId: string): Promise<DeleteExc
 
 /**
  * POST /excel-exports
- * Retorna arquivo .xlsx (Blob) — não retorna JSON.
  *
- * ✅ Se você já tiver `api.postBlob`, prefira ele.
- * Aqui mantém fetch direto para não quebrar o parser JSON do wrapper.
+ * Importante:
+ * - O backend espera: { templateId, scope: { fairId?, ownerId?, stallId? } }
+ * - Retorna Blob (.xlsx)
  */
-export async function createExcelExport(input: CreateExcelExportInput): Promise<Blob> {
-  const payload = CreateExcelExportInputSchema.parse(input)
+export async function createExcelExport(
+  input: CreateExcelExportInput,
+): Promise<Blob> {
+  const payload = CreateExcelExportInputSchema.parse(input);
 
-  const baseUrl =
-    // @ts-expect-error - nem todo wrapper expõe, mas tentamos reaproveitar se existir
-    (api.baseUrl as string | undefined) ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    ""
-
-  // @ts-expect-error - opcional, caso seu wrapper exponha o token
-  const token: string | undefined = api.getAccessToken?.()
-
-  const res = await fetch(`${baseUrl.replace(/\/$/, "")}/excel-exports`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(payload),
-  })
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "")
-    throw new Error(text || `Falha ao gerar Excel (HTTP ${res.status}).`)
-  }
-
-  return await res.blob()
+  return api.post<Blob>("excel-exports", payload, {
+    responseType: "blob",
+  });
 }

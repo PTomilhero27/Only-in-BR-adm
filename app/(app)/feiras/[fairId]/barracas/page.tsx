@@ -65,6 +65,11 @@ export default function FairStallsPage() {
    */
   const contractSettings = query.data?.fair?.contractSettings ?? null
 
+  /**
+   * ✅ NOVO: catálogo de taxas da feira vem junto no payload (sem chamada extra)
+   */
+  const fairTaxes = query.data?.fair?.taxes ?? []
+
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase()
 
@@ -83,69 +88,76 @@ export default function FairStallsPage() {
     })
   }, [items, q, status])
 
-const kpis = useMemo(() => {
-  const exhibitors = items.length
-  const purchased = items.reduce((acc, i) => acc + i.stallsQtyPurchased, 0)
-  const linked = items.reduce((acc, i) => acc + i.stallsQtyLinked, 0)
+  const kpis = useMemo(() => {
+    const exhibitors = items.length
+    const purchased = items.reduce((acc, i) => acc + i.stallsQtyPurchased, 0)
+    const linked = items.reduce((acc, i) => acc + i.stallsQtyLinked, 0)
 
-  const statusCounts = items.reduce(
-    (acc, i) => {
-      acc[i.status] = (acc[i.status] ?? 0) + 1
-      return acc
-    },
-    {
-      SELECIONADO: 0,
-      AGUARDANDO_PAGAMENTO: 0,
-      AGUARDANDO_ASSINATURA: 0,
-      CONCLUIDO: 0,
-    } as Record<OwnerFairStatus, number>,
-  )
+    const statusCounts = items.reduce(
+      (acc, i) => {
+        acc[i.status] = (acc[i.status] ?? 0) + 1
+        return acc
+      },
+      {
+        SELECIONADO: 0,
+        AGUARDANDO_PAGAMENTO: 0,
+        AGUARDANDO_ASSINATURA: 0,
+        AGUARDANDO_BARRACAS: 0,
+        CONCLUIDO: 0,
+      } as Record<OwnerFairStatus, number>,
+    )
 
-  const doneExhibitors = statusCounts.CONCLUIDO
+    const doneExhibitors = statusCounts.CONCLUIDO
 
-  /**
-   * KPIs Financeiros
-   * Fonte de verdade:
-   * - row.payment.totalCents / paidCents (cache já “no nível do expositor”)
-   * - parcelas (installments) para identificar atrasos por dueDate
-   */
-  const totalSoldCents = items.reduce((acc, row) => acc + (row.payment?.totalCents ?? 0), 0)
-  const totalPaidCents = items.reduce((acc, row) => acc + (row.payment?.paidCents ?? 0), 0)
-  const totalOpenCents = Math.max(0, totalSoldCents - totalPaidCents)
+    /**
+     * KPIs Financeiros
+     * Fonte de verdade:
+     * - row.payment.totalCents / paidCents (cache já “no nível do expositor”)
+     * - parcelas (installments) para identificar atrasos por dueDate
+     */
+    const totalSoldCents = items.reduce(
+      (acc, row) => acc + (row.payment?.totalCents ?? 0),
+      0,
+    )
+    const totalPaidCents = items.reduce(
+      (acc, row) => acc + (row.payment?.paidCents ?? 0),
+      0,
+    )
+    const totalOpenCents = Math.max(0, totalSoldCents - totalPaidCents)
 
-  const now = new Date()
-  const overdueOpenCents = items.reduce((acc, row) => {
-    const purchases = row.purchasesPayments ?? []
-    let rowOverdue = 0
+    const now = new Date()
+    const overdueOpenCents = items.reduce((acc, row) => {
+      const purchases = row.purchasesPayments ?? []
+      let rowOverdue = 0
 
-    for (const p of purchases) {
-      const inst = p.installments ?? []
-      for (const it of inst) {
-        const due = new Date(it.dueDate)
-        const isOverdue = due < now && !it.paidAt
-        if (isOverdue) rowOverdue += it.amountCents ?? 0
+      for (const p of purchases) {
+        const inst = p.installments ?? []
+        for (const it of inst) {
+          const due = new Date(it.dueDate)
+          const isOverdue = due < now && !it.paidAt
+          if (isOverdue) rowOverdue += it.amountCents ?? 0
+        }
       }
+
+      return acc + rowOverdue
+    }, 0)
+
+    return {
+      exhibitors,
+      purchased,
+      linked,
+      doneExhibitors,
+      statusCounts,
+
+      stallsCapacity: query.data?.fair?.stallsCapacity ?? null,
+
+      // ✅ financeiro
+      totalSoldCents,
+      totalPaidCents,
+      totalOpenCents,
+      overdueOpenCents,
     }
-
-    return acc + rowOverdue
-  }, 0)
-
-  return {
-    exhibitors,
-    purchased,
-    linked,
-    doneExhibitors,
-    statusCounts,
-
-    stallsCapacity: query.data?.fair?.stallsCapacity ?? null,
-
-    // ✅ financeiro
-    totalSoldCents,
-    totalPaidCents,
-    totalOpenCents,
-    overdueOpenCents,
-  }
-}, [items, query.data?.fair])
+  }, [items, query.data?.fair])
 
   return (
     <div className="p-6 space-y-6">
@@ -158,7 +170,9 @@ const kpis = useMemo(() => {
       />
 
       <div className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Barracas vinculadas</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          Barracas vinculadas
+        </h1>
         <div className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{fairName}</span>
           {fairStatus ? <span> · {fairStatus}</span> : null}
@@ -209,6 +223,7 @@ const kpis = useMemo(() => {
         data={filtered}
         isLoading={query.isLoading}
         isError={query.isError}
+        fairTaxes={fairTaxes}
       />
     </div>
   )

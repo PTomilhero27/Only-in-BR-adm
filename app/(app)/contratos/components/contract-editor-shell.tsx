@@ -365,7 +365,6 @@ export function ContractEditorShell({
                     </span>
 
                     {/* aqui mantemos o seu componente, mas ele precisa renderizar inline */}
-                    {/* Se o ContentActionsPanel for só botões, você pode removê-lo e colocar o toggle direto aqui */}
                     <Button
                       type="button"
                       variant="outline"

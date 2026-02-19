@@ -1,17 +1,18 @@
 "use client"
 
 /**
- * ExcelGrid (virtualizado + scroll real)
+ * ExcelGrid (SINGLE - virtualizado + scroll real)
  *
  * Responsabilidade:
- * - Renderizar uma grade estilo Excel com 100x26 (ou qualquer totalRows/totalCols)
- * - Usar scroll nativo (overflow-auto) e virtualizar células (renderizar só o viewport)
- * - Permitir selecionar célula e acionar edição (abre modal no parent)
+ * - Renderizar grade estilo Excel com totalRows/totalCols
+ * - SINGLE é uma tabela livre (default 10x10)
+ * - Exibir BIND de forma amigável no grid (label do catálogo)
  *
- * Decisão (performance):
- * - Um único container com overflow-auto
- * - Um "spacer" com o tamanho total da planilha (para o scroll ser real)
- * - Renderizamos apenas as linhas/colunas visíveis (+ overscan)
+ * Ajuste UX (importante):
+ * - A altura do grid agora é responsiva:
+ *   - Se a planilha for pequena, o grid ENCOLHE e termina na última linha.
+ *   - Se a planilha for grande, o grid ocupa o restante da tela e vira scrollável.
+ * - Implementação via CSS: height = min(calc(100vh - offset), totalHeightPx)
  */
 
 import * as React from "react"
@@ -80,12 +81,22 @@ export function ExcelGrid(props: {
   totalRows: number
   totalCols: number
 
+  /** Label amigável dos binds */
+  fieldLabelByKey?: Map<string, { label: string; format?: any }>
+
   /** Opcional: ajustar tamanho de célula */
   cellWidth?: number
   cellHeight?: number
 
   /** Overscan (renderiza um pouco a mais pra scroll ficar suave) */
   overscan?: number
+
+  /**
+   * ✅ controla “quanto sobra” da tela para o Excel
+   * - Ajuste fino conforme o seu layout (TopBar + paddings + gaps).
+   * - Se ficar pequeno/grande demais, altere esse número no Builder.
+   */
+  maxHeightOffsetPx?: number
 
   className?: string
 }) {
@@ -96,9 +107,11 @@ export function ExcelGrid(props: {
     onCellClick,
     totalRows,
     totalCols,
-    cellWidth = 140,
-    cellHeight = 48,
+    fieldLabelByKey,
+    cellWidth = 180,
+    cellHeight = 44,
     overscan = 2,
+    maxHeightOffsetPx = 210, // ✅ bom default pro seu layout atual (pode ajustar)
     className,
   } = props
 
@@ -111,7 +124,6 @@ export function ExcelGrid(props: {
   const [viewport, setViewport] = React.useState({ w: 800, h: 520 })
   const [scroll, setScroll] = React.useState({ left: 0, top: 0 })
 
-  // Medir viewport do scroller (pra calcular quantas células cabem)
   React.useEffect(() => {
     const el = scrollerRef.current
     if (!el) return
@@ -125,31 +137,24 @@ export function ExcelGrid(props: {
     return () => ro.disconnect()
   }, [])
 
-  // Atualizar scroll (nativo)
   React.useEffect(() => {
     const el = scrollerRef.current
     if (!el) return
 
-    const onScroll = () => {
-      setScroll({ left: el.scrollLeft, top: el.scrollTop })
-    }
-
+    const onScroll = () => setScroll({ left: el.scrollLeft, top: el.scrollTop })
     el.addEventListener("scroll", onScroll, { passive: true })
     return () => el.removeEventListener("scroll", onScroll)
   }, [])
 
-  // Quantas células cabem na área útil (sem headers)
   const usableW = Math.max(0, viewport.w - rowHeaderW)
   const usableH = Math.max(0, viewport.h - colHeaderH)
 
   const visibleCols = Math.max(1, Math.floor(usableW / cellWidth))
   const visibleRows = Math.max(1, Math.floor(usableH / cellHeight))
 
-  // Offset baseado no scroll
   const colOffset = Math.max(0, Math.min(totalCols - 1, Math.floor(scroll.left / cellWidth)))
   const rowOffset = Math.max(0, Math.min(totalRows - 1, Math.floor(scroll.top / cellHeight)))
 
-  // Range renderizado (com overscan)
   const colStart = Math.max(0, colOffset - overscan)
   const rowStart = Math.max(0, rowOffset - overscan)
   const colEnd = Math.min(totalCols, colOffset + visibleCols + overscan)
@@ -157,25 +162,22 @@ export function ExcelGrid(props: {
 
   const cols = React.useMemo(() => {
     const out: number[] = []
-    for (let c = colStart + 1; c <= colEnd; c++) out.push(c) // 1-based
+    for (let c = colStart + 1; c <= colEnd; c++) out.push(c)
     return out
   }, [colStart, colEnd])
 
   const rows = React.useMemo(() => {
     const out: number[] = []
-    for (let r = rowStart + 1; r <= rowEnd; r++) out.push(r) // 1-based
+    for (let r = rowStart + 1; r <= rowEnd; r++) out.push(r)
     return out
   }, [rowStart, rowEnd])
 
-  // Posição do “bloco virtualizado” dentro do spacer
   const translateX = colStart * cellWidth
   const translateY = rowStart * cellHeight
 
-  // Tamanho total scrollável (spacer)
   const totalW = totalCols * cellWidth + rowHeaderW
   const totalH = totalRows * cellHeight + colHeaderH
 
-  // Teclado: setas movem seleção, Enter abre modal
   function ensureVisible(rc: CellCoord) {
     const el = scrollerRef.current
     if (!el) return
@@ -213,62 +215,45 @@ export function ExcelGrid(props: {
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "ArrowUp") {
-      e.preventDefault()
-      moveSelection({ row: selected.row - 1, col: selected.col })
-      return
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault()
-      moveSelection({ row: selected.row + 1, col: selected.col })
-      return
-    }
-    if (e.key === "ArrowLeft") {
-      e.preventDefault()
-      moveSelection({ row: selected.row, col: selected.col - 1 })
-      return
-    }
-    if (e.key === "ArrowRight") {
-      e.preventDefault()
-      moveSelection({ row: selected.row, col: selected.col + 1 })
-      return
-    }
-    if (e.key === "Enter") {
-      e.preventDefault()
-      onCellClick?.(selected)
-      return
-    }
+    if (e.key === "ArrowUp") return (e.preventDefault(), moveSelection({ row: selected.row - 1, col: selected.col }))
+    if (e.key === "ArrowDown") return (e.preventDefault(), moveSelection({ row: selected.row + 1, col: selected.col }))
+    if (e.key === "ArrowLeft") return (e.preventDefault(), moveSelection({ row: selected.row, col: selected.col - 1 }))
+    if (e.key === "ArrowRight") return (e.preventDefault(), moveSelection({ row: selected.row, col: selected.col + 1 }))
+    if (e.key === "Enter") return (e.preventDefault(), onCellClick?.(selected))
   }
+
+  function displayForCell(cell: ExcelTemplateCellInput | undefined) {
+    if (!cell) return ""
+    if (cell.type !== "BIND") return cell.value ?? ""
+
+    const fieldKey = cell.value ?? ""
+    const meta = fieldLabelByKey?.get(fieldKey)
+    if (meta?.label) return `{{${meta.label}}}`
+    return `{{${fieldKey}}}`
+  }
+
+  // ✅ altura “inteligente”
+  const heightCss = `min(calc(100vh - ${maxHeightOffsetPx}px), ${totalH}px)`
 
   return (
     <div className={cn("space-y-3", className)}>
-      {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-semibold">Planilha</div>
         </div>
-
-        <div className="text-xs text-muted-foreground">Clique para selecionar • Enter para editar</div>
       </div>
 
-      {/* Scroller */}
       <div
         ref={scrollerRef}
         tabIndex={0}
         onKeyDown={onKeyDown}
-        className={cn(
-          "relative w-full overflow-auto rounded-2xl border bg-background outline-none",
-          // ocupa bem a tela e permite scroll
-          "h-[calc(100vh-260px)]",
-        )}
+        className={cn("relative w-full overflow-auto rounded-2xl border bg-background outline-none")}
+        style={{ height: heightCss }}
         aria-label="Grade do Excel"
       >
-        {/* Spacer do tamanho TOTAL (faz o scroll ser real) */}
         <div style={{ width: totalW, height: totalH }} />
 
-        {/* Layer: headers + viewport virtualizado */}
         <div className="pointer-events-none absolute inset-0">
-          {/* Corner */}
           <div
             className="pointer-events-none absolute left-0 top-0 flex items-center justify-center border-b border-r bg-muted/40 text-xs text-muted-foreground"
             style={{ width: rowHeaderW, height: colHeaderH }}
@@ -276,7 +261,6 @@ export function ExcelGrid(props: {
             #
           </div>
 
-          {/* Col headers (virtualizados) */}
           <div
             className="absolute top-0"
             style={{ left: rowHeaderW, height: colHeaderH, transform: `translateX(${translateX}px)` }}
@@ -294,7 +278,6 @@ export function ExcelGrid(props: {
             </div>
           </div>
 
-          {/* Row headers (virtualizados) */}
           <div
             className="absolute left-0"
             style={{ top: colHeaderH, width: rowHeaderW, transform: `translateY(${translateY}px)` }}
@@ -312,7 +295,6 @@ export function ExcelGrid(props: {
             </div>
           </div>
 
-          {/* Cells viewport (virtualizado) */}
           <div
             className="absolute"
             style={{
@@ -329,9 +311,8 @@ export function ExcelGrid(props: {
                     const cell = cellMap.get(keyOf(rc))
                     const isSelected = selected.row === r && selected.col === c
 
-                    const display = !cell ? "" : cell.type === "BIND" ? `{{${cell.value}}}` : (cell.value ?? "")
+                    const display = displayForCell(cell)
 
-                    // pointer-events desligado no wrapper, ligamos no botão
                     return (
                       <div key={`c-${r}-${c}`} className="pointer-events-auto">
                         <CellButton

@@ -2,23 +2,14 @@
 
 import { Card } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { useFairsQuery } from '@/app/modules/fairs/hooks/use-fairs-query'
-import { useCreateFairMutation, useUpdateFairMutation } from '@/app/modules/fairs/queries'
-import { UpsertFairDialog } from '../components/fairs/upsert-fair-dialog'
-import { FairAccordionCard } from '../components/fairs/fair-accordion-card'
 import { Spinner } from '@/components/ui/spinner'
 
-/**
- * Seção de Feiras (Admin).
- * Responsabilidade:
- * - Criar feiras (POST /fairs)
- * - Listar feiras (GET /fairs)
- * - Editar infos básicas (PATCH /fairs/:id)
- *
- * Atualização:
- * - Agora a feira exige stallsCapacity (capacidade de barracas).
- * - O backend também retorna stallsReserved/stallsRemaining para apoiar UX.
- */
+import { useFairsQuery } from '@/app/modules/fairs/hooks/use-fairs-query'
+import { useCreateFairMutation, useUpdateFairMutation } from '@/app/modules/fairs/queries'
+
+import { UpsertFairDialog } from '../components/fairs/upsert-fair-dialog'
+import { FairAccordionCard } from '../components/fairs/fair-accordion-card'
+
 export function FairsAdminSection() {
   const { data, isLoading } = useFairsQuery()
   const createMutation = useCreateFairMutation()
@@ -40,15 +31,13 @@ export function FairsAdminSection() {
             triggerText="Criar feira"
             isSubmitting={createMutation.isPending}
             onSubmit={async (payload) => {
-              /**
-               * POST /fairs
-               * Agora inclui stallsCapacity.
-               */
               await createMutation.mutateAsync({
                 name: payload.name,
                 address: payload.address,
                 stallsCapacity: payload.stallsCapacity,
                 occurrences: payload.occurrences ?? [],
+                // ✅ agora é taxes (array)
+                taxes: payload.taxes ?? [],
               })
             }}
           />
@@ -57,7 +46,9 @@ export function FairsAdminSection() {
         <Separator className="my-4" />
 
         {isLoading ? (
-          <div className="text-sm text-muted-foreground">Carregando feiras <Spinner /> </div>
+          <div className="text-sm text-muted-foreground flex items-center gap-2">
+            Carregando feiras <Spinner />
+          </div>
         ) : !data || data.length === 0 ? (
           <div className="text-sm text-muted-foreground">Nenhuma feira cadastrada ainda.</div>
         ) : (
@@ -75,7 +66,11 @@ export function FairsAdminSection() {
                       id: fair.id,
                       name: fair.name,
                       address: fair.address ?? '',
-                      stallsCapacity: (fair as any).stallsCapacity ?? 0,
+                      stallsCapacity: fair.stallsCapacity ?? 0,
+                      // ✅ vem do backend como FairTax[]
+                      taxes: fair.taxes ?? [],
+                      // occurrences (se você um dia permitir editar)
+                      occurrences: fair.occurrences ?? [],
                     }}
                     onSubmit={async (payload) => {
                       if (!payload.id) return
@@ -86,13 +81,14 @@ export function FairsAdminSection() {
                           name: payload.name,
                           address: payload.address,
                           stallsCapacity: payload.stallsCapacity,
+                          // ✅ agora é taxes (array)
+                          taxes: payload.taxes ?? [],
                         },
                       })
                     }}
                   />
                 }
-              >
-              </FairAccordionCard>
+              />
             ))}
           </div>
         )}

@@ -18,14 +18,32 @@ import {
 
 import { UnitPriceInput } from './unit-price-input'
 
-/** tamanhos (ajuste se seu enum mudar) */
-export type StallSizeValue = 'SIZE_2X2' | 'SIZE_3X3' | 'SIZE_3X6' | 'TRAILER'
+/**
+ * Este componente edita compras de barracas "1 por 1".
+ *
+ * Responsabilidade:
+ * - Permitir o admin configurar tamanho, valor e pagamentos por unidade (linha).
+ * - Manter coerência interna para gerar payload válido para o backend.
+ *
+ * Decisões:
+ * - O enum de tamanho precisa espelhar o backend (Prisma StallSize).
+ * - Agora incluímos CART (Carrinho) no fluxo de compra.
+ */
+
+/** ✅ tamanhos (espelho do enum do backend) */
+export type StallSizeValue =
+  | 'SIZE_2X2'
+  | 'SIZE_3X3'
+  | 'SIZE_3X6'
+  | 'TRAILER'
+  | 'CART'
 
 const STALL_SIZES: Array<{ value: StallSizeValue; label: string }> = [
   { value: 'SIZE_2X2', label: '2m x 2m' },
   { value: 'SIZE_3X3', label: '3m x 3m' },
   { value: 'SIZE_3X6', label: '3m x 6m' },
   { value: 'TRAILER', label: 'Trailer / Food Truck' },
+  { value: 'CART', label: 'Carrinho' }, // ✅ novo
 ]
 
 function makeClientId() {
@@ -183,7 +201,7 @@ export function PurchasedStallsEditor(props: {
 
         <Button
           variant="default"
-          className=" w-full"
+          className="w-full"
           disabled={disabled}
           onClick={() => setNext([...(value ?? []), buildEmptyPurchase()])}
         >
@@ -193,13 +211,12 @@ export function PurchasedStallsEditor(props: {
       </div>
 
       <Card className="rounded-2xl border bg-background/50 p-4">
-        <div className="flex flex-col  gap-2">
-          <span className='text-muted-foreground text-sm'>
+        <div className="flex flex-col gap-2">
+          <span className="text-muted-foreground text-sm">
             Barracas vinculadas: <b>{value.length}</b>
           </span>
           <span className="text-muted-foreground text-sm">
             Pago agora: <b>R$ {formatCentsToBRLText(totals.paidCents)}</b>
-
           </span>
           <span className="text-muted-foreground text-sm">
             Total: <b>R$ {formatCentsToBRLText(totals.totalCents)}</b>
@@ -215,19 +232,23 @@ export function PurchasedStallsEditor(props: {
           const needsInstallments = remaining > 0
 
           return (
-            <Card key={item.clientId} className=" gap-2 rounded-2xl border bg-background/50 p-4 space-y-4">
+            <Card
+              key={item.clientId}
+              className="gap-2 rounded-2xl border bg-background/50 p-4 space-y-4"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="text-sm font-semibold">Barraca {idx + 1}</div>
-
 
                     <Badge variant="secondary" className="rounded-full">
                       R$ {formatCentsToBRLText(unit)}
                     </Badge>
 
                     {remaining === 0 ? (
-                      <Badge className="rounded-full bg-green-100 text-green-700">Quitada</Badge>
+                      <Badge className="rounded-full bg-green-100 text-green-700">
+                        Quitada
+                      </Badge>
                     ) : (
                       <Badge className="rounded-full bg-amber-100 text-amber-700">
                         Falta R$ {formatCentsToBRLText(remaining)}
@@ -241,7 +262,7 @@ export function PurchasedStallsEditor(props: {
                 </div>
 
                 <Button
-                  className='hover:text-red-500 '
+                  className="hover:text-red-500"
                   variant="ghost"
                   size="icon"
                   disabled={disabled || value.length === 1}
@@ -287,7 +308,6 @@ export function PurchasedStallsEditor(props: {
                       const safePaid = Math.min(item.paidUpfrontCents ?? 0, unitPriceCents)
                       const remainingNext = Math.max(0, unitPriceCents - safePaid)
 
-                      // Se quitou => zera parcelas
                       if (remainingNext === 0) {
                         next[idx] = {
                           ...item,
@@ -300,7 +320,6 @@ export function PurchasedStallsEditor(props: {
                         return
                       }
 
-                      // Se ainda falta e já tinha parcelamento => recalcula automaticamente
                       const count = item.installmentsCount ?? 0
                       const shouldRecalc = count > 0
 
@@ -328,7 +347,6 @@ export function PurchasedStallsEditor(props: {
 
                       const next = [...value]
 
-                      // Quitou => zera parcelas
                       if (remainingNext === 0) {
                         next[idx] = {
                           ...item,
@@ -340,7 +358,6 @@ export function PurchasedStallsEditor(props: {
                         return
                       }
 
-                      // Se ainda falta e já tinha parcelamento => recalcula automaticamente
                       const count = item.installmentsCount ?? 0
                       const shouldRecalc = count > 0
 
@@ -372,15 +389,16 @@ export function PurchasedStallsEditor(props: {
                   </div>
 
                   <div className="">
-
                     <div className="rounded-2xl border bg-background p-3">
                       <div className="text-xs text-muted-foreground">Conferência</div>
                       <div className="mt-1 flex flex-col text-sm">
-                        <span className='text-muted-foreground'>
-
+                        <span className="text-muted-foreground">
                           Soma parcelas:{' '}
                           <b>
-                            R$ {formatCentsToBRLText(item.installments.reduce((a, i) => a + (i.amountCents ?? 0), 0))}
+                            R{'$'}{' '}
+                            {formatCentsToBRLText(
+                              item.installments.reduce((a, i) => a + (i.amountCents ?? 0), 0),
+                            )}
                           </b>
                         </span>
 
@@ -473,7 +491,8 @@ export function PurchasedStallsEditor(props: {
         <p className="text-xs text-destructive">{error}</p>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Dica: se <b>valor pago</b> for diferente do <b>valor da barraca</b>, configure parcelas e vencimentos do restante.
+          Dica: se <b>valor pago</b> for diferente do <b>valor da barraca</b>, configure parcelas e
+          vencimentos do restante.
         </p>
       )}
     </div>
