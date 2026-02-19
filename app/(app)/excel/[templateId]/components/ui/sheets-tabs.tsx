@@ -16,10 +16,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
-import { ExcelTemplateSheetInputSchema, type ExcelTemplateSheetInput } from "@/app/modules/excel/excel.schema"
+import { ExcelTemplateSheetApiInputSchema, type ExcelTemplateSheetInput } from "@/app/modules/excel/excel.schema"
 
 function makeNewSheet(order: number): ExcelTemplateSheetInput {
-  return ExcelTemplateSheetInputSchema.parse({
+  return ExcelTemplateSheetApiInputSchema.parse({
     name: `Aba ${order + 1}`,
     order,
     dataset: "FAIR",
@@ -48,7 +48,7 @@ export function SheetsTabs(props: {
     const next = sheets
       .filter((_, i) => i !== index)
       .map((s, i) =>
-        ExcelTemplateSheetInputSchema.parse({
+        ExcelTemplateSheetApiInputSchema.parse({
           ...s,
           order: i,
           cells: s.cells ?? [],
@@ -61,7 +61,7 @@ export function SheetsTabs(props: {
 
   function renameSheet(index: number, name: string) {
     const next = sheets.slice()
-    next[index] = ExcelTemplateSheetInputSchema.parse({
+    next[index] = ExcelTemplateSheetApiInputSchema.parse({
       ...next[index],
       name,
       cells: next[index].cells ?? [],
