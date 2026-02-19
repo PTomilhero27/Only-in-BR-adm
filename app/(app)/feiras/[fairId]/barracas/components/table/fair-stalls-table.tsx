@@ -1,30 +1,60 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import type { FairExhibitorRow, OwnerFairStatus, StallSize } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
-import { exhibitorDisplayName, ownerFairStatusLabel, stallSizeLabel } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
+import * as React from "react";
+import type {
+  FairExhibitorRow,
+  OwnerFairStatus,
+  StallSize,
+} from "@/app/modules/fairs/exhibitors/exhibitors.schema";
+import {
+  exhibitorDisplayName,
+  ownerFairStatusLabel,
+  stallSizeLabel,
+} from "@/app/modules/fairs/exhibitors/exhibitors.schema";
 
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/table/table"
-import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
-import { cn } from "@/lib/utils"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/table/table";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
-import { FairStallsRowActions } from "./fair-stalls-row-actions"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { FairStallsRowActions } from "./fair-stalls-row-actions";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
-import { Mail, Phone, Link2, ShoppingBag, Ruler, CreditCard } from "lucide-react"
-import { getOwnerFairStatusMeta } from "./owner-fair-status-badges"
-import { FairExhibitorContractDialog } from "../contratos/fair-exhibitor-contract-dialog"
-import { ChangeExhibitorStatusDialog } from "../exhibitor/change-exhibitor-status-dialog"
-import { FairExhibitorDetailsDialog } from "../exhibitor/fair-exhibitor-details-dialog"
-import { ExhibitorPaymentsDialog } from "../pagamentos/exhibitor-payments-dialog"
+import {
+  Mail,
+  Phone,
+  Link2,
+  ShoppingBag,
+  Ruler,
+  CreditCard,
+} from "lucide-react";
+import { getOwnerFairStatusMeta } from "./owner-fair-status-badges";
+import { FairExhibitorContractDialog } from "../contratos/fair-exhibitor-contract-dialog";
+import { ChangeExhibitorStatusDialog } from "../exhibitor/change-exhibitor-status-dialog";
+import { FairExhibitorDetailsDialog } from "../exhibitor/fair-exhibitor-details-dialog";
+import { ExhibitorPaymentsDialog } from "../pagamentos/exhibitor-payments-dialog";
+import { FairTax } from "@/app/modules/fairs/fairs.schemas";
 
 type Props = {
-  fairId: string
-  data: FairExhibitorRow[]
-  isLoading: boolean
-  isError: boolean
-}
+  fairId: string;
+  data: FairExhibitorRow[];
+  isLoading: boolean;
+  isError: boolean;
+
+  fairTaxes: FairTax[];
+};
 
 /**
  * Wrapper para tornar a tabela responsiva no mobile:
@@ -41,11 +71,9 @@ function ResponsiveTableWrap({ children }: { children: React.ReactNode }) {
       )}
     >
       {/* w-max permite a tabela ficar maior que o container e ativar scroll */}
-      <div className="min-w-full">
-        {children}
-      </div>
+      <div className="min-w-full">{children}</div>
     </div>
-  )
+  );
 }
 
 function TableColGroup() {
@@ -62,82 +90,91 @@ function TableColGroup() {
       <col style={{ width: "8%" }} />
       <col style={{ width: "6%" }} />
     </colgroup>
-  )
+  );
 }
 
 function formatMoneyBRLFromCents(cents?: number | null) {
-  if (cents === null || cents === undefined) return "—"
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100)
+  if (cents === null || cents === undefined) return "—";
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(cents / 100);
 }
 
 function paymentStatusLabel(status?: string | null) {
   switch (status) {
     case "PAID":
-      return "Pago"
+      return "Pago";
     case "PARTIALLY_PAID":
-      return "Parcial"
+      return "Parcial";
     case "OVERDUE":
-      return "Atrasado"
+      return "Atrasado";
     case "PENDING":
-      return "Pendente"
+      return "Pendente";
     case "CANCELLED":
-      return "Cancelado"
+      return "Cancelado";
     default:
-      return status ?? "—"
+      return status ?? "—";
   }
 }
 
-function paymentTone(status?: string | null): "neutral" | "success" | "warn" | "danger" {
+function paymentTone(
+  status?: string | null,
+): "neutral" | "success" | "warn" | "danger" {
   switch (status) {
     case "PAID":
-      return "success"
+      return "success";
     case "PARTIALLY_PAID":
-      return "warn"
+      return "warn";
     case "OVERDUE":
-      return "danger"
+      return "danger";
     default:
-      return "neutral"
+      return "neutral";
   }
 }
 
 function groupPurchasedSizes(purchases: FairExhibitorRow["purchasesPayments"]) {
-  const map = new Map<StallSize, number>()
+  const map = new Map<StallSize, number>();
   for (const p of purchases ?? []) {
-    const prev = map.get(p.stallSize) ?? 0
-    map.set(p.stallSize, prev + (p.qty ?? 0))
+    const prev = map.get(p.stallSize) ?? 0;
+    map.set(p.stallSize, prev + (p.qty ?? 0));
   }
   return Array.from(map.entries())
     .filter(([, qty]) => qty > 0)
-    .sort((a, b) => a[0].localeCompare(b[0]))
+    .sort((a, b) => a[0].localeCompare(b[0]));
 }
 
-function sizesLinesFromPurchases(purchases: FairExhibitorRow["purchasesPayments"]) {
-  const grouped = groupPurchasedSizes(purchases)
-  if (grouped.length === 0) return ["Nenhum tamanho informado."]
+function sizesLinesFromPurchases(
+  purchases: FairExhibitorRow["purchasesPayments"],
+) {
+  const grouped = groupPurchasedSizes(purchases);
+  if (grouped.length === 0) return ["Nenhum tamanho informado."];
 
-  return grouped.map(([size, qty]) => `${stallSizeLabel(size)} · ${qty}`)
+  return grouped.map(([size, qty]) => `${stallSizeLabel(size)} · ${qty}`);
 }
 
-function sizesLabelFromPurchases(purchases: FairExhibitorRow["purchasesPayments"]) {
-  const grouped = groupPurchasedSizes(purchases)
-  if (grouped.length === 0) return "—"
-  return `${grouped.length} tipo(s)`
+function sizesLabelFromPurchases(
+  purchases: FairExhibitorRow["purchasesPayments"],
+) {
+  const grouped = groupPurchasedSizes(purchases);
+  if (grouped.length === 0) return "—";
+  return `${grouped.length} tipo(s)`;
 }
 
 function paymentLines(row: FairExhibitorRow) {
-  const p = row.payment
-  if (!p) return ["Sem dados de pagamento."]
+  const p = row.payment;
+  if (!p) return ["Sem dados de pagamento."];
 
   return [
     `Status: ${paymentStatusLabel(p.status)}`,
     `Compras: ${p.purchasesCount}`,
     `Pago: ${formatMoneyBRLFromCents(p.paidCents)}`,
     `Total: ${formatMoneyBRLFromCents(p.totalCents)}`,
-  ]
+  ];
 }
 
 function TableSkeleton() {
-  const rows = Array.from({ length: 10 })
+  const rows = Array.from({ length: 10 });
 
   return (
     <ResponsiveTableWrap>
@@ -149,12 +186,24 @@ function TableSkeleton() {
             <TableHead className="whitespace-nowrap">Documento</TableHead>
             <TableHead className="whitespace-nowrap">Telefone</TableHead>
             <TableHead className="whitespace-nowrap">Email</TableHead>
-            <TableHead className="whitespace-nowrap text-center">Compradas</TableHead>
-            <TableHead className="whitespace-nowrap text-center">Vinculadas</TableHead>
-            <TableHead className="whitespace-nowrap text-center">Tamanhos</TableHead>
-            <TableHead className="whitespace-nowrap text-center">Pagamentos</TableHead>
-            <TableHead className="whitespace-nowrap text-center">Status</TableHead>
-            <TableHead className="whitespace-nowrap text-center">Ações</TableHead>
+            <TableHead className="whitespace-nowrap text-center">
+              Compradas
+            </TableHead>
+            <TableHead className="whitespace-nowrap text-center">
+              Vinculadas
+            </TableHead>
+            <TableHead className="whitespace-nowrap text-center">
+              Tamanhos
+            </TableHead>
+            <TableHead className="whitespace-nowrap text-center">
+              Pagamentos
+            </TableHead>
+            <TableHead className="whitespace-nowrap text-center">
+              Status
+            </TableHead>
+            <TableHead className="whitespace-nowrap text-center">
+              Ações
+            </TableHead>
           </TableRow>
         </TableHeader>
 
@@ -196,7 +245,7 @@ function TableSkeleton() {
         </TableBody>
       </Table>
     </ResponsiveTableWrap>
-  )
+  );
 }
 
 function Chip({
@@ -209,14 +258,14 @@ function Chip({
   asButton,
   onClick,
 }: {
-  icon: React.ReactNode
-  label: string
-  tone?: "neutral" | "success" | "warn" | "danger"
-  tooltipTitle: string
-  tooltipLines: string[]
-  className?: string
-  asButton?: boolean
-  onClick?: () => void
+  icon: React.ReactNode;
+  label: string;
+  tone?: "neutral" | "success" | "warn" | "danger";
+  tooltipTitle: string;
+  tooltipLines: string[];
+  className?: string;
+  asButton?: boolean;
+  onClick?: () => void;
 }) {
   const toneClass =
     tone === "success"
@@ -225,7 +274,7 @@ function Chip({
         ? "border-amber-200 bg-amber-50 text-amber-700"
         : tone === "danger"
           ? "border-rose-200 bg-rose-50 text-rose-700"
-          : "border-muted/60 bg-muted/20 text-foreground"
+          : "border-muted/60 bg-muted/20 text-foreground";
 
   const Base = (
     <div
@@ -244,7 +293,7 @@ function Chip({
       <span className="opacity-80 shrink-0">{icon}</span>
       <span className="truncate">{label}</span>
     </div>
-  )
+  );
 
   return (
     <TooltipProvider>
@@ -259,18 +308,20 @@ function Chip({
               </div>
             ))}
             {asButton ? (
-              <div className="text-xs mt-2 text-foreground font-medium">Clique para abrir detalhes</div>
+              <div className="text-xs mt-2 text-foreground font-medium">
+                Clique para abrir detalhes
+              </div>
             ) : null}
           </div>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
-  )
+  );
 }
 
 function StatusBadge({ status }: { status: OwnerFairStatus }) {
-  const label = ownerFairStatusLabel(status)
-  const meta = getOwnerFairStatusMeta(status)
+  const label = ownerFairStatusLabel(status);
+  const meta = getOwnerFairStatusMeta(status);
 
   return (
     <Badge
@@ -285,44 +336,54 @@ function StatusBadge({ status }: { status: OwnerFairStatus }) {
     >
       {label}
     </Badge>
-  )
+  );
 }
 
-export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
-  const [statusOpen, setStatusOpen] = React.useState(false)
-  const [statusRow, setStatusRow] = React.useState<FairExhibitorRow | null>(null)
+export function FairStallsTable({
+  fairId,
+  data,
+  isLoading,
+  isError,
+  fairTaxes,
+}: Props) {
+  const [statusOpen, setStatusOpen] = React.useState(false);
+  const [statusRow, setStatusRow] = React.useState<FairExhibitorRow | null>(
+    null,
+  );
 
-  const [detailsOpen, setDetailsOpen] = React.useState(false)
-  const [detailsRow, setDetailsRow] = React.useState<FairExhibitorRow | null>(null)
+  const [detailsOpen, setDetailsOpen] = React.useState(false);
+  const [detailsRow, setDetailsRow] = React.useState<FairExhibitorRow | null>(
+    null,
+  );
 
-  const [paymentsOpen, setPaymentsOpen] = React.useState(false)
-  const [paymentsRow, setPaymentsRow] = React.useState<FairExhibitorRow | null>(null)
+  const [paymentsOpen, setPaymentsOpen] = React.useState(false);
+  const [paymentsRow, setPaymentsRow] = React.useState<FairExhibitorRow | null>(
+    null,
+  );
 
-  const [contractOpen, setContractOpen] = React.useState(false)
-  const [contractRow, setContractRow] = React.useState<FairExhibitorRow | null>(null)
+  const [contractOpen, setContractOpen] = React.useState(false);
+  const [contractRow, setContractRow] = React.useState<FairExhibitorRow | null>(
+    null,
+  );
 
   function handleChangeStatus(row: FairExhibitorRow) {
-    setStatusRow(row)
-    setStatusOpen(true)
+    setStatusRow(row);
+    setStatusOpen(true);
   }
 
   function handleViewExhibitorDetails(row: FairExhibitorRow) {
-    setDetailsRow(row)
-    setDetailsOpen(true)
+    setDetailsRow(row);
+    setDetailsOpen(true);
   }
 
   function handleOpenPayments(row: FairExhibitorRow) {
-    setPaymentsRow(row)
-    setPaymentsOpen(true)
+    setPaymentsRow(row);
+    setPaymentsOpen(true);
   }
 
   function handleOpenContract(row: FairExhibitorRow) {
-    setContractRow(row)
-    setContractOpen(true)
-  }
-
-  function handleGenerateSignatureLink(args: { fairId: string; ownerFairId: string; contractId: string }) {
-    console.log("GERAR LINK (TODO backend):", args)
+    setContractRow(row);
+    setContractOpen(true);
   }
 
   return (
@@ -330,8 +391,8 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
       <FairExhibitorContractDialog
         open={contractOpen}
         onOpenChange={(open) => {
-          setContractOpen(open)
-          if (!open) setContractRow(null)
+          setContractOpen(open);
+          if (!open) setContractRow(null);
         }}
         fairId={fairId}
         row={contractRow}
@@ -342,19 +403,20 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
         row={statusRow}
         open={statusOpen}
         onOpenChange={(open) => {
-          setStatusOpen(open)
-          if (!open) setStatusRow(null)
+          setStatusOpen(open);
+          if (!open) setStatusRow(null);
         }}
       />
 
       <FairExhibitorDetailsDialog
         open={detailsOpen}
         onOpenChange={(open) => {
-          setDetailsOpen(open)
-          if (!open) setDetailsRow(null)
+          setDetailsOpen(open);
+          if (!open) setDetailsRow(null);
         }}
         row={detailsRow}
         fairId={fairId}
+        taxes={fairTaxes}
       />
 
       <ExhibitorPaymentsDialog
@@ -393,38 +455,62 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
                   <TableHead className="whitespace-nowrap">Documento</TableHead>
                   <TableHead className="whitespace-nowrap">Telefone</TableHead>
                   <TableHead className="whitespace-nowrap">Email</TableHead>
-                  <TableHead className="whitespace-nowrap text-center">Compradas</TableHead>
-                  <TableHead className="whitespace-nowrap text-center">Vinculadas</TableHead>
-                  <TableHead className="whitespace-nowrap text-center">Tamanhos</TableHead>
-                  <TableHead className="whitespace-nowrap text-center">Pagamentos</TableHead>
-                  <TableHead className="whitespace-nowrap text-center">Status</TableHead>
-                  <TableHead className="whitespace-nowrap text-center">Ações</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">
+                    Compradas
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-center">
+                    Vinculadas
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-center">
+                    Tamanhos
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-center">
+                    Pagamentos
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-center">
+                    Status
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-center">
+                    Ações
+                  </TableHead>
                 </TableRow>
               </TableHeader>
 
               <TableBody>
                 {data.map((row) => {
-                  const name = exhibitorDisplayName(row)
+                  const name = exhibitorDisplayName(row);
 
-                  const purchased = row.stallsQtyPurchased
-                  const linked = row.stallsQtyLinked
-                  const complete = purchased > 0 && linked >= purchased
-                  const linkedTone = complete ? "success" : linked > 0 ? "warn" : "neutral"
+                  const purchased = row.stallsQtyPurchased;
+                  const linked = row.stallsQtyLinked;
+                  const complete = purchased > 0 && linked >= purchased;
+                  const linkedTone = complete
+                    ? "success"
+                    : linked > 0
+                      ? "warn"
+                      : "neutral";
 
-                  const sizesLabel = sizesLabelFromPurchases(row.purchasesPayments)
-                  const sizesTooltipLines = sizesLinesFromPurchases(row.purchasesPayments)
+                  const sizesLabel = sizesLabelFromPurchases(
+                    row.purchasesPayments,
+                  );
+                  const sizesTooltipLines = sizesLinesFromPurchases(
+                    row.purchasesPayments,
+                  );
 
-                  const phone = row.owner.phone?.trim() || "—"
-                  const email = row.owner.email?.trim() || "—"
+                  const phone = row.owner.phone?.trim() || "—";
+                  const email = row.owner.email?.trim() || "—";
 
-                  const p = row.payment
-                  const hasPayment = !!p
-                  const paymentsLabel =
-                    !p ? "—" : `${formatMoneyBRLFromCents(p.paidCents)} / ${formatMoneyBRLFromCents(p.totalCents)}`
-                  const paymentsTone = paymentTone(p?.status)
+                  const p = row.payment;
+                  const hasPayment = !!p;
+                  const paymentsLabel = !p
+                    ? "—"
+                    : `${formatMoneyBRLFromCents(p.paidCents)} / ${formatMoneyBRLFromCents(p.totalCents)}`;
+                  const paymentsTone = paymentTone(p?.status);
 
                   return (
-                    <TableRow key={row.ownerFairId} className="transition hover:bg-muted/30">
+                    <TableRow
+                      key={row.ownerFairId}
+                      className="transition hover:bg-muted/30"
+                    >
                       <TableCell className="min-w-0">
                         <div className="min-w-0">
                           <div className="font-medium truncate">
@@ -443,14 +529,18 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
                       <TableCell className="text-sm text-muted-foreground">
                         <div className="flex items-center gap-2 min-w-0">
                           <Phone className="h-4 w-4 opacity-70 shrink-0" />
-                          <span className="truncate whitespace-nowrap">{phone}</span>
+                          <span className="truncate whitespace-nowrap">
+                            {phone}
+                          </span>
                         </div>
                       </TableCell>
 
                       <TableCell className="text-sm text-muted-foreground">
                         <div className="flex items-center gap-2 min-w-0">
                           <Mail className="h-4 w-4 opacity-70 shrink-0" />
-                          <span className="truncate whitespace-nowrap">{email}</span>
+                          <span className="truncate whitespace-nowrap">
+                            {email}
+                          </span>
                         </div>
                       </TableCell>
 
@@ -459,7 +549,9 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
                           icon={<ShoppingBag className="h-3.5 w-3.5" />}
                           label={`${purchased}`}
                           tooltipTitle="Barracas compradas"
-                          tooltipLines={[`Total comprado nesta feira: ${purchased}`]}
+                          tooltipLines={[
+                            `Total comprado nesta feira: ${purchased}`,
+                          ]}
                         />
                       </TableCell>
 
@@ -471,7 +563,9 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
                           tooltipLines={[
                             `Vinculadas: ${linked}`,
                             `Compradas: ${purchased}`,
-                            complete ? "✅ Expositor já vinculou tudo." : "⏳ Ainda faltam vínculos.",
+                            complete
+                              ? "✅ Expositor já vinculou tudo."
+                              : "⏳ Ainda faltam vínculos.",
                           ]}
                           tone={linkedTone}
                         />
@@ -513,14 +607,18 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
                         />
                       </TableCell>
                     </TableRow>
-                  )
+                  );
                 })}
 
                 {!isError && data.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={10} className="py-10 text-center">
-                      <div className="text-sm font-medium">Nenhum expositor encontrado</div>
-                      <div className="text-xs text-muted-foreground">Tente alterar os filtros de busca.</div>
+                      <div className="text-sm font-medium">
+                        Nenhum expositor encontrado
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Tente alterar os filtros de busca.
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}
@@ -530,5 +628,5 @@ export function FairStallsTable({ fairId, data, isLoading, isError }: Props) {
         </div>
       )}
     </div>
-  )
+  );
 }

@@ -3,73 +3,130 @@
  * - Centraliza parsing de erro do Nest
  * - Permite validação com Zod (request/response)
  * - ✅ Suporta multipart/form-data (FormData) e body raw (Blob/File)
+ * - ✅ Suporta respostas não-JSON (Blob / text / arrayBuffer)
+ * - ✅ Permite controlar cache (ex.: no-store para evitar 304)
  */
 
-import { HTTPError } from "ky"
-import { ZodError, ZodType } from "zod"
-import { http } from "./client"
-import { ApiError } from "./errors"
+import { HTTPError } from "ky";
+import { ZodError, ZodType } from "zod";
+import { http } from "./client";
+import { ApiError } from "./errors";
+
+type ApiResponseType = "json" | "blob" | "text" | "arrayBuffer";
 
 type ApiRequestOptions<TResponse> = {
-  requestSchema?: ZodType<any>
-  responseSchema?: ZodType<TResponse>
-}
+  /**
+   * Schema opcional para validar/normalizar o request antes de enviar.
+   */
+  requestSchema?: ZodType<any>;
+
+  /**
+   * Schema opcional para validar a resposta (somente quando responseType = "json").
+   */
+  responseSchema?: ZodType<TResponse>;
+
+  /**
+   * ✅ Como interpretar a resposta.
+   * - "json" (default): usa .json()
+   * - "blob": usa .blob() (ex.: download xlsx/pdf)
+   * - "text": usa .text()
+   * - "arrayBuffer": usa .arrayBuffer()
+   */
+  responseType?: ApiResponseType;
+
+  /**
+   * ✅ Controle de cache do fetch.
+   * Útil para endpoints que não devem retornar 304.
+   */
+  cache?: RequestCache;
+};
 
 function isFormData(v: unknown): v is FormData {
-  return typeof FormData !== "undefined" && v instanceof FormData
+  return typeof FormData !== "undefined" && v instanceof FormData;
 }
 
 function isBlobLike(v: unknown): v is Blob {
-  return typeof Blob !== "undefined" && v instanceof Blob
+  return typeof Blob !== "undefined" && v instanceof Blob;
 }
 
 function isArrayBuffer(v: unknown): v is ArrayBuffer {
-  return typeof ArrayBuffer !== "undefined" && v instanceof ArrayBuffer
+  return typeof ArrayBuffer !== "undefined" && v instanceof ArrayBuffer;
 }
 
 async function parseNestError(err: unknown): Promise<ApiError> {
   // ✅ Zod falhou ANTES do network
   if (err instanceof ZodError) {
-    const first = err.issues?.[0]?.message ?? "Erro de validação."
-    return new ApiError(first, 400, err.flatten())
+    const first = err.issues?.[0]?.message ?? "Erro de validação.";
+    return new ApiError(first, 400, err.flatten());
   }
 
   // ✅ Erro HTTP vindo do backend (status 4xx/5xx)
   if (err instanceof HTTPError) {
-    const status = err.response.status
+    const status = err.response.status;
 
-    let body: any = null
+    let body: any = null;
     try {
-      body = await err.response.json()
+      body = await err.response.json();
     } catch {}
 
-    const rawMessage = body?.message
+    const rawMessage = body?.message;
 
-    const message =
-      Array.isArray(rawMessage)
-        ? rawMessage[0]
-        : typeof rawMessage === "string"
-          ? rawMessage
-          : status === 401
-            ? "Não autorizado."
-            : status === 403
-              ? "Acesso negado."
-              : "Erro na requisição."
+    const message = Array.isArray(rawMessage)
+      ? rawMessage[0]
+      : typeof rawMessage === "string"
+        ? rawMessage
+        : status === 401
+          ? "Não autorizado."
+          : status === 403
+            ? "Acesso negado."
+            : "Erro na requisição.";
 
-    return new ApiError(String(message), status, body)
+    return new ApiError(String(message), status, body);
   }
 
   // ✅ Erro de rede/CORS/URL inválida etc.
   if (err instanceof Error) {
     const msg =
-      err.message?.includes("Failed to fetch") || err.message?.includes("NetworkError")
+      err.message?.includes("Failed to fetch") ||
+      err.message?.includes("NetworkError")
         ? "Falha de rede/CORS (não foi possível acessar a API)."
-        : err.message
+        : err.message;
 
-    return new ApiError(msg || "Erro inesperado.", 0, { cause: err.name })
+    return new ApiError(msg || "Erro inesperado.", 0, { cause: err.name });
   }
 
-  return new ApiError("Erro inesperado.", 0)
+  return new ApiError("Erro inesperado.", 0);
+}
+
+/**
+ * ✅ Interpreta a resposta conforme responseType.
+ * Importante:
+ * - Só aplicamos responseSchema quando o retorno é JSON.
+ */
+async function parseResponse<TResponse>(
+  resp: any,
+  opts?: ApiRequestOptions<TResponse>,
+): Promise<TResponse> {
+  const responseType: ApiResponseType = opts?.responseType ?? "json";
+
+  if (responseType === "blob") {
+    // ky ResponsePromise tem .blob()
+    return (await resp.blob()) as TResponse;
+  }
+
+  if (responseType === "text") {
+    return (await resp.text()) as TResponse;
+  }
+
+  if (responseType === "arrayBuffer") {
+    return (await resp.arrayBuffer()) as TResponse;
+  }
+
+  // default: json
+  const result = await (resp as Response).json();
+  return opts?.responseSchema
+    ? opts.responseSchema.parse(result)
+    : (result as TResponse);
 }
 
 async function request<TResponse>({
@@ -78,49 +135,63 @@ async function request<TResponse>({
   body,
   opts,
 }: {
-  method: "get" | "post" | "patch" | "delete"
-  url: string
-  body?: unknown
-  opts?: ApiRequestOptions<TResponse>
+  method: "get" | "post" | "patch" | "delete";
+  url: string;
+  body?: unknown;
+  opts?: ApiRequestOptions<TResponse>;
 }): Promise<TResponse> {
   try {
-    const safeBody = opts?.requestSchema ? opts.requestSchema.parse(body) : body
+    const safeBody = opts?.requestSchema
+      ? opts.requestSchema.parse(body)
+      : body;
+
+    // ✅ Base options comuns (cache, etc)
+    const baseOptions: any = {
+      method,
+      ...(opts?.cache ? { cache: opts.cache } : {}),
+    };
 
     // ✅ multipart/form-data
     if (isFormData(safeBody)) {
-      const result = await http(url, {
-        method,
+      const resp = http(url, {
+        ...baseOptions,
         body: safeBody,
         // ⚠️ NÃO setar Content-Type manualmente (o browser coloca boundary)
-      }).json<unknown>()
+      });
 
-      return opts?.responseSchema ? opts.responseSchema.parse(result) : (result as TResponse)
+      return await parseResponse<TResponse>(resp, opts);
     }
 
-    // ✅ raw body (Blob/File/ArrayBuffer) — se um dia precisar
+    // ✅ raw body (Blob/File/ArrayBuffer)
     if (isBlobLike(safeBody) || isArrayBuffer(safeBody)) {
-      const result = await http(url, {
-        method,
+      const resp = http(url, {
+        ...baseOptions,
         body: safeBody as any,
-      }).json<unknown>()
+      });
 
-      return opts?.responseSchema ? opts.responseSchema.parse(result) : (result as TResponse)
+      return await parseResponse<TResponse>(resp, opts);
     }
 
     // ✅ default: JSON
-    const result = await http(url, {
-      method,
+    const resp = http(url, {
+      ...baseOptions,
       json: safeBody,
-    }).json<unknown>()
+    });
 
-    return opts?.responseSchema ? opts.responseSchema.parse(result) : (result as TResponse)
+    return await parseResponse<TResponse>(resp, opts);
   } catch (err) {
-    const apiError = await parseNestError(err)
-    throw apiError
+    const apiError = await parseNestError(err);
+    throw apiError;
   }
 }
 
 export const api = {
+  /**
+   * GET genérico
+   * Padrão:
+   * - se passar responseSchema => valida com Zod
+   * - responseType default = "json"
+   */
   get: <TResponse>(
     url: string,
     responseSchema?: ZodType<TResponse>,
@@ -132,7 +203,14 @@ export const api = {
       opts: { ...opts, responseSchema },
     }),
 
-  post: <TResponse>(url: string, body?: unknown, opts?: ApiRequestOptions<TResponse>) =>
+  /**
+   * POST genérico
+   */
+  post: <TResponse>(
+    url: string,
+    body?: unknown,
+    opts?: ApiRequestOptions<TResponse>,
+  ) =>
     request<TResponse>({
       method: "post",
       url,
@@ -140,7 +218,14 @@ export const api = {
       opts,
     }),
 
-  patch: <TResponse>(url: string, body?: unknown, opts?: ApiRequestOptions<TResponse>) =>
+  /**
+   * PATCH genérico
+   */
+  patch: <TResponse>(
+    url: string,
+    body?: unknown,
+    opts?: ApiRequestOptions<TResponse>,
+  ) =>
     request<TResponse>({
       method: "patch",
       url,
@@ -148,6 +233,9 @@ export const api = {
       opts,
     }),
 
+  /**
+   * DELETE genérico
+   */
   delete: <TResponse>(
     url: string,
     responseSchema?: ZodType<TResponse>,
@@ -158,4 +246,4 @@ export const api = {
       url,
       opts: { ...opts, responseSchema },
     }),
-}
+};

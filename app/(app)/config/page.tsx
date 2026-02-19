@@ -1,4 +1,4 @@
-import { Settings, Users, CalendarDays, FileText } from 'lucide-react'
+import { Users, CalendarDays } from 'lucide-react'
 import { ConfigSectionsAccordion } from './components/config-sections-accordion'
 import { UsersAdminSection } from './sections/users-admin-section'
 import { FairsAdminSection } from './sections/fairs-admin-section'

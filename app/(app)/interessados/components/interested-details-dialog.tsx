@@ -20,7 +20,7 @@
  * - O token raw também é exibido para facilitar suporte/WhatsApp, quando necessário.
  */
 
-import React, { useEffect, useState } from "react"
+import React, { useState } from "react"
 
 import {
   Dialog,
@@ -52,6 +52,7 @@ import {
   interestDisplayLocation,
   interestDisplayName,
   type InterestListItem,
+  type InterestsFilters,
 } from "@/app/modules/interests/interests.schema"
 
 import { InterestFairsTab } from "./tabs/fairs/interest-fairs-tab"
@@ -59,7 +60,6 @@ import {
   useGrantPortalAccessMutation,
   useCreatePasswordResetTokenMutation,
 } from "@/app/modules/interests/interests.queries"
-import type { InterestsFilters } from "@/app/modules/interests/interests.schema"
 
 type Props = {
   open: boolean
@@ -249,8 +249,6 @@ function PortalAccessCard({
                 variant={expiresInMinutes === 30 ? "default" : "outline"}
                 onClick={() => setExpiresInMinutes(30)}
                 className="w-full"
-                // Opcional: se quiser fixar reset em 30 min, descomente:
-                // disabled={mode === "RESET"}
               >
                 30 min
               </Button>
@@ -260,7 +258,6 @@ function PortalAccessCard({
                 variant={expiresInMinutes === 60 ? "default" : "outline"}
                 onClick={() => setExpiresInMinutes(60)}
                 className="w-full"
-                // disabled={mode === "RESET"}
               >
                 60 min
               </Button>
@@ -278,14 +275,14 @@ function PortalAccessCard({
                     : "Resetar senha"}
               </Button>
             </div>
-
           </div>
         </div>
-            <div className="text-xs w-full text-muted-foreground">
-              {mode === "ACTIVATE"
-                ? "Gera link temporário para o expositor definir a senha no primeiro acesso."
-                : "Gera link temporário para o expositor redefinir a senha."}
-            </div>
+
+        <div className="text-xs w-full text-muted-foreground">
+          {mode === "ACTIVATE"
+            ? "Gera link temporário para o expositor definir a senha no primeiro acesso."
+            : "Gera link temporário para o expositor redefinir a senha."}
+        </div>
 
         {/* Resultado */}
         {generatedLink && (
@@ -313,11 +310,10 @@ function PortalAccessCard({
               </div>
               <Input readOnly value={generatedLink} className="font-mono text-xs" />
             </div>
-
           </div>
         )}
 
-        {/* Feedback de erro (sem toast por enquanto, para ser auto contido) */}
+        {/* Feedback de erro */}
         {isError && (
           <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
             Não foi possível gerar o link. Verifique o backend e tente novamente.
@@ -336,28 +332,31 @@ export function InterestedDetailsDialog({
 }: Props) {
   const [tab, setTab] = useState<"dados" | "bancario" | "feiras">("dados")
 
-  // Reset de tab quando trocar o interessado (ou ao abrir)
-  useEffect(() => {
-    if (open) setTab("dados")
-  }, [open, interest?.id])
+  /**
+   * ✅ Evita setState dentro de useEffect (remove o warning do React).
+   *
+   * Regra:
+   * - Ao abrir o modal, sempre resetamos para a aba "dados".
+   * - Ao fechar, apenas propagamos o estado.
+   */
+  function handleOpenChange(nextOpen: boolean) {
+    if (nextOpen) setTab("dados")
+    onOpenChange(nextOpen)
+  }
 
   if (!interest) return null
 
   const title = interestDisplayName(interest)
   const location = interestDisplayLocation(interest)
 
-  /**
-   * Regra:
-   * - Só mostramos ações de acesso quando o backend retornou `hasPortalLogin` (true/false).
-   * - Isso evita exibir botões quando a API ainda não está atualizada.
-   */
   const shouldShowPortalAccess = typeof interest.hasPortalLogin === "boolean"
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       {/* overflow-hidden é crucial pro scroll ficar só no miolo */}
       <DialogContent className="max-w-7xl overflow-hidden h-[90vh] p-0 flex flex-col">
         <Tabs
+          key={interest.id} // ✅ trocar interessado reseta o estado interno das tabs
           value={tab}
           onValueChange={(v) => setTab(v as any)}
           className="flex flex-col flex-1 overflow-auto"
@@ -432,19 +431,16 @@ export function InterestedDetailsDialog({
                 </CardHeader>
 
                 <CardContent className="space-y-6">
-                  {/* Nome + Documento */}
                   <div className="grid gap-4 md:grid-cols-2">
                     <Field label="Nome / Razão social" value={interestDisplayName(interest)} />
                     <Field label="Documento" value={interest.document} mono />
                   </div>
 
-                  {/* Email + Telefone */}
                   <div className="grid gap-4 md:grid-cols-2">
                     <Field label="E-mail" value={interest.email} />
                     <Field label="Telefone" value={interest.phone} />
                   </div>
 
-                  {/* Criado / Atualizado */}
                   <div className="grid gap-4 md:grid-cols-2 pt-2 border-t">
                     <Field label="Criado em" value={formatDateTime(interest.createdAt)} />
                     <Field label="Atualizado em" value={formatDateTime(interest.updatedAt)} />
@@ -463,22 +459,18 @@ export function InterestedDetailsDialog({
                   </CardHeader>
 
                   <CardContent className="grid grid-cols-12 gap-4">
-                    {/* Cidade */}
                     <div className="col-span-12 md:col-span-6">
                       <Field label="Cidade" value={interest.addressCity} />
                     </div>
 
-                    {/* CEP */}
                     <div className="col-span-6 md:col-span-4">
                       <Field label="CEP" value={interest.addressZipcode} mono />
                     </div>
 
-                    {/* UF */}
                     <div className="col-span-6 md:col-span-2">
                       <Field label="UF" value={interest.addressState} />
                     </div>
 
-                    {/* Endereço completo */}
                     <div className="col-span-12">
                       <Field label="Endereço completo" value={interest.addressFull} />
                     </div>

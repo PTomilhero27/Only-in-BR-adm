@@ -1,10 +1,13 @@
-import { z } from 'zod'
+// src/modules/interest-fairs/interest-fairs.schema.ts
+import { z } from "zod";
 
 /**
- * Modelo novo (admin):
+ * ✅ Modelo novo (admin):
  * - OwnerFair é o vínculo âncora
  * - Compras ficam em OwnerFairPurchase (+ installments)
  * - Compras são 1 por 1 (linhas), NÃO AGRUPADAS
+ * - StallFair consome 1 purchase por vínculo
+ * - Agora: StallFair pode ter UMA taxa (FairTax) aplicada com snapshot no backend
  */
 
 // ---------------------------
@@ -12,27 +15,52 @@ import { z } from 'zod'
 // ---------------------------
 
 export const OwnerFairStatusSchema = z.enum([
-  'SELECIONADO',
-  'AGUARDANDO_PAGAMENTO',
-  'AGUARDANDO_ASSINATURA',
-  'CONCLUIDO',
-])
-export type OwnerFairStatus = z.infer<typeof OwnerFairStatusSchema>
+  "SELECIONADO",
+  "AGUARDANDO_PAGAMENTO",
+  "AGUARDANDO_ASSINATURA",
+  "AGUARDANDO_BARRACAS",
+  "CONCLUIDO",
+]);
+export type OwnerFairStatus = z.infer<typeof OwnerFairStatusSchema>;
 
 export const OwnerFairPaymentStatusSchema = z.enum([
-  'PENDING',
-  'PARTIALLY_PAID',
-  'PAID',
-  'OVERDUE',
-  'CANCELLED',
-])
-export type OwnerFairPaymentStatus = z.infer<typeof OwnerFairPaymentStatusSchema>
+  "PENDING",
+  "PARTIALLY_PAID",
+  "PAID",
+  "OVERDUE",
+  "CANCELLED",
+]);
+export type OwnerFairPaymentStatus = z.infer<
+  typeof OwnerFairPaymentStatusSchema
+>;
 
-export const StallSizeSchema = z.enum(['SIZE_2X2', 'SIZE_3X3', 'SIZE_3X6', 'TRAILER'])
-export type StallSize = z.infer<typeof StallSizeSchema>
+export const StallSizeSchema = z.enum([
+  "SIZE_2X2",
+  "SIZE_3X3",
+  "SIZE_3X6",
+  "TRAILER",
+  "CART",
+]);
+export type StallSize = z.infer<typeof StallSizeSchema>;
 
-export const StallTypeSchema = z.enum(['OPEN', 'CLOSED', 'TRAILER'])
-export type StallType = z.infer<typeof StallTypeSchema>
+export const StallTypeSchema = z.enum(["OPEN", "CLOSED", "TRAILER", "CART"]);
+export type StallType = z.infer<typeof StallTypeSchema>;
+
+// ---------------------------
+// FairTax (resumo para UI)
+// ---------------------------
+
+/**
+ * ✅ Resumo de taxa retornado dentro de StallFair (quando aplicável).
+ * Observação:
+ * - O backend deve expor via snapshot (name/percent).
+ */
+export const FairTaxSummarySchema = z.object({
+  id: z.string(),
+  name: z.string().min(1).nullable().optional(),
+  percentBps: z.number().int().nullable().optional(),
+});
+export type FairTaxSummary = z.infer<typeof FairTaxSummarySchema>;
 
 // ---------------------------
 // Response: Purchases (linhas)
@@ -45,16 +73,17 @@ export const OwnerFairPurchaseInstallmentSchema = z.object({
 
   paidAt: z.string().nullable(),
   paidAmountCents: z.number().int().min(0).nullable(),
-})
-
-export type OwnerFairPurchaseInstallment = z.infer<typeof OwnerFairPurchaseInstallmentSchema>
+});
+export type OwnerFairPurchaseInstallment = z.infer<
+  typeof OwnerFairPurchaseInstallmentSchema
+>;
 
 export const OwnerFairPurchaseSchema = z.object({
   id: z.string(),
 
   stallSize: StallSizeSchema,
 
-  qty: z.number().int(), // backend (para o fluxo atual, será 1)
+  qty: z.number().int(),
   usedQty: z.number().int(),
 
   unitPriceCents: z.number().int(),
@@ -67,12 +96,11 @@ export const OwnerFairPurchaseSchema = z.object({
   status: OwnerFairPaymentStatusSchema,
 
   installments: z.array(OwnerFairPurchaseInstallmentSchema),
-})
-
-export type OwnerFairPurchase = z.infer<typeof OwnerFairPurchaseSchema>
+});
+export type OwnerFairPurchase = z.infer<typeof OwnerFairPurchaseSchema>;
 
 // ---------------------------
-// Response: Stalls vinculadas (portal)
+// Response: Stalls vinculadas (admin)
 // ---------------------------
 
 export const InterestFairStallItemSchema = z.object({
@@ -92,10 +120,15 @@ export const InterestFairStallItemSchema = z.object({
     usedQty: z.number().int(),
   }),
 
-  createdAt: z.string(),
-})
+  /**
+   * ✅ Taxa aplicada nesta barraca na feira (se existir).
+   * Regra: no máximo 1 (porque é um único campo no backend).
+   */
+  tax: FairTaxSummarySchema.nullable().optional(),
 
-export type InterestFairStallItem = z.infer<typeof InterestFairStallItemSchema>
+  createdAt: z.string(),
+});
+export type InterestFairStallItem = z.infer<typeof InterestFairStallItemSchema>;
 
 // ---------------------------
 // Response: listagem de vínculos
@@ -114,15 +147,17 @@ export const InterestFairItemSchema = z.object({
 
   purchases: z.array(OwnerFairPurchaseSchema),
   stalls: z.array(InterestFairStallItemSchema),
-})
+});
 
 export const ListInterestFairsResponseSchema = z.object({
   ownerId: z.string(),
   items: z.array(InterestFairItemSchema),
-})
+});
 
-export type InterestFairItem = z.infer<typeof InterestFairItemSchema>
-export type ListInterestFairsResponse = z.infer<typeof ListInterestFairsResponseSchema>
+export type InterestFairItem = z.infer<typeof InterestFairItemSchema>;
+export type ListInterestFairsResponse = z.infer<
+  typeof ListInterestFairsResponseSchema
+>;
 
 // ---------------------------
 // Inputs (mutations)
@@ -140,10 +175,10 @@ export const OwnerFairPurchaseInstallmentInputSchema = z.object({
 
   paidAt: z.string().nullable().optional(),
   paidAmountCents: z.number().int().min(0).nullable().optional(),
-})
+});
 export type OwnerFairPurchaseInstallmentInput = z.infer<
   typeof OwnerFairPurchaseInstallmentInputSchema
->
+>;
 
 /**
  * Input de compra 1 por 1 (linha).
@@ -156,9 +191,14 @@ export const OwnerFairPurchaseItemInputSchema = z.object({
   paidCents: z.number().int().min(0).optional().default(0),
 
   installmentsCount: z.number().int().min(0).max(12).optional().default(0),
-  installments: z.array(OwnerFairPurchaseInstallmentInputSchema).optional().default([]),
-})
-export type OwnerFairPurchaseItemInput = z.infer<typeof OwnerFairPurchaseItemInputSchema>
+  installments: z
+    .array(OwnerFairPurchaseInstallmentInputSchema)
+    .optional()
+    .default([]),
+});
+export type OwnerFairPurchaseItemInput = z.infer<
+  typeof OwnerFairPurchaseItemInputSchema
+>;
 
 /**
  * POST /interests/:ownerId/fairs
@@ -167,11 +207,25 @@ export type OwnerFairPurchaseItemInput = z.infer<typeof OwnerFairPurchaseItemInp
 export const LinkInterestToFairInputSchema = z.object({
   fairId: z.string().min(1),
   purchases: z.array(OwnerFairPurchaseItemInputSchema).min(1),
-})
-export type LinkInterestToFairInput = z.infer<typeof LinkInterestToFairInputSchema>
-
+});
+export type LinkInterestToFairInput = z.infer<
+  typeof LinkInterestToFairInputSchema
+>;
 
 export const PatchOwnerFairPurchasesInputSchema = z.object({
   purchases: z.array(OwnerFairPurchaseItemInputSchema).min(1),
-})
-export type PatchOwnerFairPurchasesInput = z.infer<typeof PatchOwnerFairPurchasesInputSchema>
+});
+export type PatchOwnerFairPurchasesInput = z.infer<
+  typeof PatchOwnerFairPurchasesInputSchema
+>;
+
+/**
+ * ✅ PATCH /interests/:ownerId/fairs/:fairId/stalls/:stallFairId/tax
+ * Body deve ser APENAS { taxId }
+ */
+export const UpdateStallFairTaxInputSchema = z.object({
+  taxId: z.string().min(1, "taxId é obrigatório."),
+});
+export type UpdateStallFairTaxInput = z.infer<
+  typeof UpdateStallFairTaxInputSchema
+>;
