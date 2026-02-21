@@ -115,7 +115,7 @@ export function FairExhibitorContractDialog({ open, onOpenChange, fairId, row, b
   const signedAt = contractBlock?.signedAt ?? null
 
   // ✅ contractId correto: Contract.instance.id; fallback ownerFairId
-  const contractId = row?.contract.fairTemplate?.id ?? null
+  const contractId = row?.contract?.fairTemplate?.id ?? null
 
   const exhibitorName = row?.owner.fullName?.trim() || "Expositor"
   const exhibitorDoc = row?.owner.document || "—"
