@@ -135,7 +135,7 @@ async function request<TResponse>({
   body,
   opts,
 }: {
-  method: "get" | "post" | "patch" | "delete";
+  method: "get" | "post" | "put" | "patch" | "delete";
   url: string;
   body?: unknown;
   opts?: ApiRequestOptions<TResponse>;
@@ -228,6 +228,18 @@ export const api = {
   ) =>
     request<TResponse>({
       method: "patch",
+      url,
+      body,
+      opts,
+    }),
+
+  put: <TResponse>(
+    url: string,
+    body?: unknown,
+    opts?: ApiRequestOptions<TResponse>,
+  ) =>
+    request<TResponse>({
+      method: "put",
       url,
       body,
       opts,

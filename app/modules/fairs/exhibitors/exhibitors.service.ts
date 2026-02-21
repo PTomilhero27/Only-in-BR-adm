@@ -30,10 +30,71 @@ import {
 } from "./exhibitors.schema"
 
 /**
+ * Utilitário interno:
+ * - Centraliza como exibimos erros de parse (Zod) com contexto.
+ * - Ajuda MUITO quando "não aparece nada na tela" por mismatch de schema.
+ */
+function buildZodErrorMessage(params: {
+  label: string
+  url: string
+  error: unknown
+  data?: unknown
+}) {
+  const { label, url, error, data } = params
+
+  const err = error as any
+  const issues = err?.issues ?? err?.errors ?? null
+
+  const header = `[${label}] Falha ao validar resposta do backend (Zod).`
+  const details = issues ? `\nIssues:\n${JSON.stringify(issues, null, 2)}` : ""
+  const payload = data ? `\nPayload (resumo):\n${JSON.stringify(data, null, 2)}` : ""
+
+  return `${header}\nURL: ${url}${details}${payload}`
+}
+
+/**
  * GET /fairs/:fairId/exhibitors
  */
-export async function listFairExhibitors(fairId: string): Promise<FairExhibitorsResponse> {
-  return api.get(`fairs/${fairId}/exhibitors`, FairExhibitorsResponseSchema)
+export async function listFairExhibitors(
+  fairId: string,
+): Promise<FairExhibitorsResponse> {
+  const url = `fairs/${fairId}/exhibitors`
+
+  /**
+   * Observação importante:
+   * - Chamamos api.get "cru" (sem schema) para conseguir logar o payload real caso o Zod quebre.
+   * - Depois validamos com Zod manualmente.
+   *
+   * Isso evita o problema clássico:
+   * "não aparece nada" porque a validação quebra e a UI só recebe isError sem detalhes.
+   */
+  const data = await api.get(url)
+
+  // ✅ Debug opcional (somente em desenvolvimento)
+  if (process.env.NODE_ENV !== "production") {
+    // eslint-disable-next-line no-console
+    console.log("[listFairExhibitors] raw payload =", data)
+  }
+
+  try {
+    return FairExhibitorsResponseSchema.parse(data)
+  } catch (err) {
+    const message = buildZodErrorMessage({
+      label: "listFairExhibitors",
+      url,
+      error: err,
+      data,
+    })
+
+    // eslint-disable-next-line no-console
+    console.error(message)
+
+    /**
+     * Lançamos um erro "legível" para o React Query.
+     * A página vai renderizar esse erro no <pre>.
+     */
+    throw new Error(message)
+  }
 }
 
 /**

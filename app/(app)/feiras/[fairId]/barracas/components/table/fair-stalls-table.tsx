@@ -39,6 +39,7 @@ import {
   ShoppingBag,
   Ruler,
   CreditCard,
+  MapPin,
 } from "lucide-react";
 import { getOwnerFairStatusMeta } from "./owner-fair-status-badges";
 import { FairExhibitorContractDialog } from "../contratos/fair-exhibitor-contract-dialog";
@@ -46,6 +47,7 @@ import { ChangeExhibitorStatusDialog } from "../exhibitor/change-exhibitor-statu
 import { FairExhibitorDetailsDialog } from "../exhibitor/fair-exhibitor-details-dialog";
 import { ExhibitorPaymentsDialog } from "../pagamentos/exhibitor-payments-dialog";
 import { FairTax } from "@/app/modules/fairs/fairs.schemas";
+import { SlotMapDialog } from "../map/slot-map-dialog";
 
 type Props = {
   fairId: string;
@@ -63,32 +65,38 @@ type Props = {
  */
 function ResponsiveTableWrap({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      className={cn(
-        "w-full overflow-x-auto",
-        // dá um scroll suave no iOS
-        "[webkit-overflow-scrolling:touch]",
-      )}
-    >
-      {/* w-max permite a tabela ficar maior que o container e ativar scroll */}
+    <div className={cn("w-full overflow-x-auto", "[webkit-overflow-scrolling:touch]")}>
       <div className="min-w-full">{children}</div>
     </div>
   );
 }
 
 function TableColGroup() {
+  /**
+   * Importante: <colgroup> não pode ter whitespace/text nodes como filhos.
+   * Geramos as colunas via array para evitar {" "} e erros de hydration.
+   *
+   * ✅ Ajuste:
+   * - Coluna Expositor menor (14%) para forçar ellipsis em nomes longos.
+   */
+  const widths = [
+    "8%", // Expositor (↓ era 18%)
+    "14%", // Telefone
+    "18%", // Email
+    "7%",  // Slot
+    "7%",  // Compradas
+    "9%",  // Vinculadas
+    "10%", // Tamanhos
+    "12%", // Pagamentos
+    "9%",  // Status
+    "6%",  // Ações
+  ];
+
   return (
     <colgroup>
-      <col style={{ width: "16%" }} />
-      <col style={{ width: "12%" }} />
-      <col style={{ width: "14%" }} />
-      <col style={{ width: "18%" }} />
-      <col style={{ width: "7%" }} />
-      <col style={{ width: "9%" }} />
-      <col style={{ width: "10%" }} />
-      <col style={{ width: "10%" }} />
-      <col style={{ width: "8%" }} />
-      <col style={{ width: "6%" }} />
+      {widths.map((w, idx) => (
+        <col key={idx} style={{ width: w }} />
+      ))}
     </colgroup>
   );
 }
@@ -144,18 +152,14 @@ function groupPurchasedSizes(purchases: FairExhibitorRow["purchasesPayments"]) {
     .sort((a, b) => a[0].localeCompare(b[0]));
 }
 
-function sizesLinesFromPurchases(
-  purchases: FairExhibitorRow["purchasesPayments"],
-) {
+function sizesLinesFromPurchases(purchases: FairExhibitorRow["purchasesPayments"]) {
   const grouped = groupPurchasedSizes(purchases);
   if (grouped.length === 0) return ["Nenhum tamanho informado."];
 
   return grouped.map(([size, qty]) => `${stallSizeLabel(size)} · ${qty}`);
 }
 
-function sizesLabelFromPurchases(
-  purchases: FairExhibitorRow["purchasesPayments"],
-) {
+function sizesLabelFromPurchases(purchases: FairExhibitorRow["purchasesPayments"]) {
   const grouped = groupPurchasedSizes(purchases);
   if (grouped.length === 0) return "—";
   return `${grouped.length} tipo(s)`;
@@ -173,6 +177,47 @@ function paymentLines(row: FairExhibitorRow) {
   ];
 }
 
+/**
+ * Resolve o “estado do slot” para a linha do expositor.
+ * Motivação:
+ * - Esta tabela é por expositor, mas o slot é por barraca (linkedStalls).
+ */
+function resolveRowSlotState(row: FairExhibitorRow) {
+  const stalls = row.linkedStalls ?? [];
+  if (stalls.length === 0) {
+    return {
+      kind: "none" as const,
+      slotNumber: null as number | null,
+      slotClientKey: null as string | null,
+    };
+  }
+
+  if (stalls.length === 1) {
+    const s = stalls[0]?.slot ?? null;
+    return {
+      kind: s ? ("single_ok" as const) : ("single_missing" as const),
+      slotNumber: s?.number ?? null,
+      slotClientKey: s?.clientKey ?? null,
+    };
+  }
+
+  const withSlot = stalls.filter((s) => !!s.slot);
+  const allHave = withSlot.length === stalls.length;
+
+  if (allHave) {
+    return {
+      kind: "multi_ok" as const,
+      slotNumber: null as number | null,
+      slotClientKey: null as string | null,
+    };
+  }
+  return {
+    kind: "multi_missing" as const,
+    slotNumber: null as number | null,
+    slotClientKey: null as string | null,
+  };
+}
+
 function TableSkeleton() {
   const rows = Array.from({ length: 10 });
 
@@ -183,27 +228,15 @@ function TableSkeleton() {
         <TableHeader>
           <TableRow className="bg-muted/20 hover:bg-muted/20">
             <TableHead className="whitespace-nowrap">Expositor</TableHead>
-            <TableHead className="whitespace-nowrap">Documento</TableHead>
             <TableHead className="whitespace-nowrap">Telefone</TableHead>
             <TableHead className="whitespace-nowrap">Email</TableHead>
-            <TableHead className="whitespace-nowrap text-center">
-              Compradas
-            </TableHead>
-            <TableHead className="whitespace-nowrap text-center">
-              Vinculadas
-            </TableHead>
-            <TableHead className="whitespace-nowrap text-center">
-              Tamanhos
-            </TableHead>
-            <TableHead className="whitespace-nowrap text-center">
-              Pagamentos
-            </TableHead>
-            <TableHead className="whitespace-nowrap text-center">
-              Status
-            </TableHead>
-            <TableHead className="whitespace-nowrap text-center">
-              Ações
-            </TableHead>
+            <TableHead className="whitespace-nowrap text-center">Slot</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Compradas</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Vinculadas</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Tamanhos</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Pagamentos</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Status</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Ações</TableHead>
           </TableRow>
         </TableHeader>
 
@@ -214,13 +247,13 @@ function TableSkeleton() {
                 <Skeleton className="h-4 w-[180px]" />
               </TableCell>
               <TableCell>
-                <Skeleton className="h-6 w-[140px] rounded-full" />
-              </TableCell>
-              <TableCell>
                 <Skeleton className="h-4 w-[160px]" />
               </TableCell>
               <TableCell>
                 <Skeleton className="h-4 w-[180px]" />
+              </TableCell>
+              <TableCell className="text-center">
+                <Skeleton className="mx-auto h-8 w-8 rounded-full" />
               </TableCell>
               <TableCell className="text-center">
                 <Skeleton className="mx-auto h-7 w-[70px] rounded-full" />
@@ -328,7 +361,6 @@ function StatusBadge({ status }: { status: OwnerFairStatus }) {
       variant="outline"
       className={cn(
         "rounded-full px-3 py-1 text-xs font-medium border-muted/60",
-        // no mobile é melhor não quebrar o status dentro da célula
         "whitespace-nowrap text-center leading-tight",
         "max-w-full",
         meta.className,
@@ -336,6 +368,89 @@ function StatusBadge({ status }: { status: OwnerFairStatus }) {
     >
       {label}
     </Badge>
+  );
+}
+
+/**
+ * Bolinha de slot (clicável).
+ */
+function SlotDot({
+  state,
+  onClick,
+}: {
+  state:
+    | { kind: "none" | "single_missing" | "multi_missing"; slotNumber: null; slotClientKey: string | null }
+    | { kind: "single_ok"; slotNumber: number | null; slotClientKey: string | null }
+    | { kind: "multi_ok"; slotNumber: null; slotClientKey: null };
+  onClick: () => void;
+}) {
+  const isOk = state.kind === "single_ok" || state.kind === "multi_ok";
+
+  const label =
+    state.kind === "single_ok"
+      ? typeof state.slotNumber === "number"
+        ? String(state.slotNumber)
+        : "✓"
+      : state.kind === "multi_ok"
+        ? "•"
+        : "?";
+
+  const tooltipTitle =
+    state.kind === "single_ok"
+      ? "Slot vinculado"
+      : state.kind === "multi_ok"
+        ? "Vários slots"
+        : "Sem slot";
+
+  const tooltipLines =
+    state.kind === "single_ok"
+      ? [
+          typeof state.slotNumber === "number"
+            ? `Slot ${state.slotNumber}`
+            : "Slot vinculado (sem número).",
+          "Clique para abrir o mapa.",
+        ]
+      : state.kind === "multi_ok"
+        ? ["Este expositor possui múltiplas barracas.", "Clique para abrir o mapa."]
+        : state.kind === "none"
+          ? ["Nenhuma barraca vinculada ainda.", "Clique para abrir o mapa."]
+          : ["Há barraca(s) sem slot.", "Clique para abrir o mapa."];
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onClick}
+            className={cn(
+              "mx-auto inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold tabular-nums",
+              "transition hover:scale-[1.03] active:scale-[0.98]",
+              isOk
+                ? "border-emerald-200 bg-emerald-100 text-emerald-800"
+                : "border-rose-200 bg-rose-100 text-rose-800",
+            )}
+            aria-label={tooltipTitle}
+            title={tooltipTitle}
+          >
+            <span className="leading-none">{label}</span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[360px]">
+          <div className="text-xs font-medium flex items-center gap-2">
+            <MapPin className="h-3.5 w-3.5 opacity-80" />
+            {tooltipTitle}
+          </div>
+          <div className="mt-1 space-y-0.5">
+            {tooltipLines.map((l, idx) => (
+              <div key={idx} className="text-xs text-muted-foreground">
+                {l}
+              </div>
+            ))}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -347,24 +462,19 @@ export function FairStallsTable({
   fairTaxes,
 }: Props) {
   const [statusOpen, setStatusOpen] = React.useState(false);
-  const [statusRow, setStatusRow] = React.useState<FairExhibitorRow | null>(
-    null,
-  );
+  const [statusRow, setStatusRow] = React.useState<FairExhibitorRow | null>(null);
 
   const [detailsOpen, setDetailsOpen] = React.useState(false);
-  const [detailsRow, setDetailsRow] = React.useState<FairExhibitorRow | null>(
-    null,
-  );
+  const [detailsRow, setDetailsRow] = React.useState<FairExhibitorRow | null>(null);
 
   const [paymentsOpen, setPaymentsOpen] = React.useState(false);
-  const [paymentsRow, setPaymentsRow] = React.useState<FairExhibitorRow | null>(
-    null,
-  );
+  const [paymentsRow, setPaymentsRow] = React.useState<FairExhibitorRow | null>(null);
 
   const [contractOpen, setContractOpen] = React.useState(false);
-  const [contractRow, setContractRow] = React.useState<FairExhibitorRow | null>(
-    null,
-  );
+  const [contractRow, setContractRow] = React.useState<FairExhibitorRow | null>(null);
+
+  const [slotOpen, setSlotOpen] = React.useState(false);
+  const [slotRow, setSlotRow] = React.useState<FairExhibitorRow | null>(null);
 
   function handleChangeStatus(row: FairExhibitorRow) {
     setStatusRow(row);
@@ -386,8 +496,27 @@ export function FairStallsTable({
     setContractOpen(true);
   }
 
+  function handleOpenSlotMap(row: FairExhibitorRow) {
+    setSlotRow(row);
+    setSlotOpen(true);
+  }
+
+  const slotState = slotRow ? resolveRowSlotState(slotRow) : null;
+
   return (
     <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
+      <SlotMapDialog
+        open={slotOpen}
+        onOpenChange={(open) => {
+          setSlotOpen(open);
+          if (!open) setSlotRow(null);
+        }}
+        fairId={fairId}
+        exhibitorName={slotRow ? exhibitorDisplayName(slotRow) : "—"}
+        slotNumber={slotState && slotState.kind === "single_ok" ? slotState.slotNumber : null}
+        slotClientKey={slotState && slotState.kind === "single_ok" ? slotState.slotClientKey : null}
+      />
+
       <FairExhibitorContractDialog
         open={contractOpen}
         onOpenChange={(open) => {
@@ -452,27 +581,15 @@ export function FairStallsTable({
               <TableHeader>
                 <TableRow className="bg-muted/20 hover:bg-muted/20">
                   <TableHead className="whitespace-nowrap">Expositor</TableHead>
-                  <TableHead className="whitespace-nowrap">Documento</TableHead>
                   <TableHead className="whitespace-nowrap">Telefone</TableHead>
                   <TableHead className="whitespace-nowrap">Email</TableHead>
-                  <TableHead className="whitespace-nowrap text-center">
-                    Compradas
-                  </TableHead>
-                  <TableHead className="whitespace-nowrap text-center">
-                    Vinculadas
-                  </TableHead>
-                  <TableHead className="whitespace-nowrap text-center">
-                    Tamanhos
-                  </TableHead>
-                  <TableHead className="whitespace-nowrap text-center">
-                    Pagamentos
-                  </TableHead>
-                  <TableHead className="whitespace-nowrap text-center">
-                    Status
-                  </TableHead>
-                  <TableHead className="whitespace-nowrap text-center">
-                    Ações
-                  </TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Slot</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Compradas</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Vinculadas</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Tamanhos</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Pagamentos</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Status</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Ações</TableHead>
                 </TableRow>
               </TableHeader>
 
@@ -483,18 +600,10 @@ export function FairStallsTable({
                   const purchased = row.stallsQtyPurchased;
                   const linked = row.stallsQtyLinked;
                   const complete = purchased > 0 && linked >= purchased;
-                  const linkedTone = complete
-                    ? "success"
-                    : linked > 0
-                      ? "warn"
-                      : "neutral";
+                  const linkedTone = complete ? "success" : linked > 0 ? "warn" : "neutral";
 
-                  const sizesLabel = sizesLabelFromPurchases(
-                    row.purchasesPayments,
-                  );
-                  const sizesTooltipLines = sizesLinesFromPurchases(
-                    row.purchasesPayments,
-                  );
+                  const sizesLabel = sizesLabelFromPurchases(row.purchasesPayments);
+                  const sizesTooltipLines = sizesLinesFromPurchases(row.purchasesPayments);
 
                   const phone = row.owner.phone?.trim() || "—";
                   const email = row.owner.email?.trim() || "—";
@@ -506,42 +615,47 @@ export function FairStallsTable({
                     : `${formatMoneyBRLFromCents(p.paidCents)} / ${formatMoneyBRLFromCents(p.totalCents)}`;
                   const paymentsTone = paymentTone(p?.status);
 
-                  return (
-                    <TableRow
-                      key={row.ownerFairId}
-                      className="transition hover:bg-muted/30"
-                    >
-                      <TableCell className="min-w-0">
-                        <div className="min-w-0">
-                          <div className="font-medium truncate">
-                            {name}{" "}
-                            <span className="text-muted-foreground font-normal whitespace-nowrap">
-                              {row.owner.personType}
-                            </span>
-                          </div>
-                        </div>
-                      </TableCell>
+                  const slot = resolveRowSlotState(row);
 
-                      <TableCell className="font-mono text-sm text-muted-foreground truncate whitespace-nowrap">
-                        {row.owner.document ?? "—"}
+                  return (
+                    <TableRow key={row.ownerFairId} className="transition hover:bg-muted/30">
+                      {/* ✅ Expositor menor + ellipsis + tooltip com nome completo */}
+                      <TableCell className="min-w-0">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-medium truncate min-w-0 block">
+                                  {name}
+                                </span>
+                                <span className="text-muted-foreground font-normal whitespace-nowrap shrink-0">
+                                  {row.owner.personType}
+                                </span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-[360px]">
+                              <div className="text-xs font-medium">{name}</div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </TableCell>
 
                       <TableCell className="text-sm text-muted-foreground">
                         <div className="flex items-center gap-2 min-w-0">
                           <Phone className="h-4 w-4 opacity-70 shrink-0" />
-                          <span className="truncate whitespace-nowrap">
-                            {phone}
-                          </span>
+                          <span className="truncate whitespace-nowrap">{phone}</span>
                         </div>
                       </TableCell>
 
                       <TableCell className="text-sm text-muted-foreground">
                         <div className="flex items-center gap-2 min-w-0">
                           <Mail className="h-4 w-4 opacity-70 shrink-0" />
-                          <span className="truncate whitespace-nowrap">
-                            {email}
-                          </span>
+                          <span className="truncate whitespace-nowrap">{email}</span>
                         </div>
+                      </TableCell>
+
+                      <TableCell className="text-center">
+                        <SlotDot state={slot as any} onClick={() => handleOpenSlotMap(row)} />
                       </TableCell>
 
                       <TableCell className="text-center">
@@ -549,9 +663,7 @@ export function FairStallsTable({
                           icon={<ShoppingBag className="h-3.5 w-3.5" />}
                           label={`${purchased}`}
                           tooltipTitle="Barracas compradas"
-                          tooltipLines={[
-                            `Total comprado nesta feira: ${purchased}`,
-                          ]}
+                          tooltipLines={[`Total comprado nesta feira: ${purchased}`]}
                         />
                       </TableCell>
 
@@ -563,9 +675,7 @@ export function FairStallsTable({
                           tooltipLines={[
                             `Vinculadas: ${linked}`,
                             `Compradas: ${purchased}`,
-                            complete
-                              ? "✅ Expositor já vinculou tudo."
-                              : "⏳ Ainda faltam vínculos.",
+                            complete ? "✅ Expositor já vinculou tudo." : "⏳ Ainda faltam vínculos.",
                           ]}
                           tone={linkedTone}
                         />
@@ -613,9 +723,7 @@ export function FairStallsTable({
                 {!isError && data.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={10} className="py-10 text-center">
-                      <div className="text-sm font-medium">
-                        Nenhum expositor encontrado
-                      </div>
+                      <div className="text-sm font-medium">Nenhum expositor encontrado</div>
                       <div className="text-xs text-muted-foreground">
                         Tente alterar os filtros de busca.
                       </div>
