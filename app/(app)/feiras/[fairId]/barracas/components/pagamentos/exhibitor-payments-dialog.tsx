@@ -17,13 +17,13 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 
-
 import {
-  useFairExhibitorsQuery,
-  useSettleInstallmentsMutation,
-  useCreateInstallmentPaymentMutation,
-  useRescheduleInstallmentMutation,
-} from "@/app/modules/fairs/exhibitors/exhibitors.queries"
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+
 import type {
   FairExhibitorRow,
   PurchasePaymentSummary,
@@ -37,8 +37,25 @@ import {
   Clock3,
   Receipt,
   CalendarClock,
+  SlidersHorizontal,
 } from "lucide-react"
+
 import { UnitPriceInput } from "@/app/(app)/interessados/components/tabs/fairs/unit-price-input"
+import { useFairExhibitorsQuery } from "@/app/modules/fairs/exhibitors/exhibitors.queries"
+
+import {
+  useCreateInstallmentPaymentMutation,
+  useRescheduleInstallmentMutation,
+  useSettleInstallmentsMutation,
+  // ✅ NOVO
+  useCreatePurchaseAdjustmentMutation,
+} from "@/app/modules/owner-fair-purchases/owner-fair-purchases.queries"
+
+import type {
+  CreatePurchaseAdjustmentInput,
+} from "@/app/modules/owner-fair-purchases/owner-fair-purchases.schema"
+import { PurchaseAdjustmentDialog } from "./purchase-adjustment-dialog"
+
 
 function formatDateBR(iso?: string | null) {
   if (!iso) return "—"
@@ -145,23 +162,20 @@ function isoToDateOnly(iso?: string | null) {
   return `${yyyy}-${mm}-${dd}`
 }
 
-function centsFromBRLText(text: string) {
-  const raw = (text ?? "")
-    .replace(/\./g, "")
-    .replace(",", ".")
-    .replace(/[^\d.]/g, "")
-
-  const num = Number(raw)
-  if (!Number.isFinite(num)) return 0
-  return Math.round(num * 100)
-}
-
-export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairId }: Props) {
+export function ExhibitorPaymentsDialog({
+  open,
+  onOpenChange,
+  ownerFairId,
+  fairId,
+}: Props) {
   const exhibitorsQuery = useFairExhibitorsQuery(fairId)
 
   const settle = useSettleInstallmentsMutation(fairId)
   const createPayment = useCreateInstallmentPaymentMutation(fairId)
   const reschedule = useRescheduleInstallmentMutation(fairId)
+
+  // ✅ NOVO: ajuste (desconto/acréscimo)
+  const createAdjustment = useCreatePurchaseAdjustmentMutation(fairId)
 
   const row: FairExhibitorRow | null = React.useMemo(() => {
     if (!ownerFairId) return null
@@ -188,7 +202,12 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
   const selectedPurchase: PurchasePaymentSummary | null =
     purchases.find((p) => p.purchaseId === selectedPurchaseId) ?? null
 
-  const isBusy = settle.isPending || createPayment.isPending || reschedule.isPending
+  const isBusy =
+    settle.isPending ||
+    createPayment.isPending ||
+    reschedule.isPending ||
+    createAdjustment.isPending
+
   const loadingRow = open && ownerFairId && exhibitorsQuery.isLoading
 
   async function confirmInstallmentPaid(ownerId: string, purchaseId: string, installmentNumber: number) {
@@ -223,7 +242,7 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
     setPayAmountCents((s) => ({ ...s, [n]: s[n] ?? 0 }))
     setPayNote((s) => ({ ...s, [n]: s[n] ?? "" }))
 
-    // opcional: fecha o outro form quando abre este
+    // fecha o outro form quando abre este
     setRescheduleOpen((s) => ({ ...s, [n]: false }))
   }
 
@@ -232,7 +251,7 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
     setNewDueDate((s) => ({ ...s, [n]: s[n] ?? isoToDateOnly(installment.dueDate) }))
     setRescheduleReason((s) => ({ ...s, [n]: s[n] ?? "" }))
 
-    // opcional: fecha o outro form quando abre este
+    // fecha o outro form quando abre este
     setPayFormOpen((s) => ({ ...s, [n]: false }))
   }
 
@@ -284,8 +303,24 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
     setRescheduleOpen((s) => ({ ...s, [n]: false }))
   }
 
+  // ✅ NOVO: modal (desconto/acréscimo)
+  const [adjustDialogOpen, setAdjustDialogOpen] = React.useState(false)
+
+  async function handleConfirmAdjustment(input: CreatePurchaseAdjustmentInput) {
+    if (!row?.owner?.id) return
+    if (!selectedPurchase) return
+
+    await createAdjustment.mutateAsync({
+      ownerId: row.owner.id,
+      purchaseId: selectedPurchase.purchaseId,
+      input,
+    })
+  }
+
   const orangeSelected =
     "bg-orange-500 text-white border-orange-500 hover:bg-orange-600 hover:border-orange-600"
+
+  const canAct = !isBusy && !!row?.owner?.id
 
   return (
     <Dialog
@@ -301,10 +336,10 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
           setPayNote({})
           setNewDueDate({})
           setRescheduleReason({})
+          setAdjustDialogOpen(false)
         }
       }}
     >
-      {/* ✅ modal com scroll */}
       <DialogContent className="max-w-3xl rounded-2xl p-0 overflow-hidden">
         <div className="flex max-h-[85vh] flex-col">
           <div className="p-6 pb-3">
@@ -398,9 +433,7 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
                             onClick={() => setSelectedPurchaseId(p.purchaseId)}
                             className={cn(
                               "rounded-full cursor-pointer border px-3 py-1 text-xs font-medium inline-flex items-center gap-2 transition",
-                              active
-                                ? orangeSelected
-                                : "bg-background hover:bg-muted/95",
+                              active ? orangeSelected : "bg-background hover:bg-muted/95",
                             )}
                           >
                             <Receipt className="h-3.5 w-3.5 opacity-70" />
@@ -420,23 +453,26 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
                     </div>
                   ) : (
                     <div className="rounded-xl border">
-                      <div className="px-4 py-3 bg-muted/20 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      {/* Header da compra */}
+                      <div className="px-4 py-3 bg-muted/20 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <Badge variant="outline" className="text-[10px] mb-2">
                             {stallSizeLabel(selectedPurchase.stallSize)}
                           </Badge>
 
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "rounded-full px-3 py-1 text-xs font-medium",
-                              planStatusTone(selectedPurchase.status),
-                            )}
-                          >
-                            {paymentStatusLabel(selectedPurchase.status)}
-                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "rounded-full px-3 py-1 text-xs font-medium",
+                                planStatusTone(selectedPurchase.status),
+                              )}
+                            >
+                              {paymentStatusLabel(selectedPurchase.status)}
+                            </Badge>
+                          </div>
 
-                          <div className="text-xs text-muted-foreground">
+                          <div className="text-xs text-muted-foreground mt-1">
                             Total:{" "}
                             <span className="font-medium text-foreground">
                               {formatMoneyBRLFromCents(selectedPurchase.totalCents)}
@@ -455,21 +491,37 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
                             </span>
                           </div>
                         </div>
+
+                        {/* ✅ Clean: um único ícone para Ajustar valor */}
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="outline"
+                                className="rounded-full"
+                                disabled={!canAct || !selectedPurchase}
+                                onClick={() => setAdjustDialogOpen(true)}
+                              >
+                                <SlidersHorizontal className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="left">
+                              Ajustar valor (desconto/acréscimo)
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </div>
 
                       {/* Lista de parcelas */}
                       <div className="p-4 space-y-3">
                         {selectedPurchase.installments.map((i) => {
-                          const s = getInstallmentState({
-                            dueDate: i.dueDate,
-                            paidAt: i.paidAt,
-                          })
+                          const s = getInstallmentState({ dueDate: i.dueDate, paidAt: i.paidAt })
                           const tone = installmentCardTone(s.state)
 
                           const paidAmount = i.paidAmountCents ?? (i.paidAt ? i.amountCents : 0)
                           const remaining = Math.max(0, i.amountCents - (i.paidAmountCents ?? 0))
-
-                          const canAct = !isBusy && !!row.owner.id
 
                           const isPaySelected = !!payFormOpen[i.number]
                           const isResSelected = !!rescheduleOpen[i.number]
@@ -477,24 +529,16 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
                           return (
                             <div
                               key={i.id}
-                              className={cn(
-                                "rounded-xl border p-4 transition hover:shadow-sm",
-                                tone.wrap,
-                              )}
+                              className={cn("rounded-xl border p-4 transition hover:shadow-sm", tone.wrap)}
                             >
                               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div className="min-w-0 space-y-1">
                                   <div className="flex items-center gap-2">
                                     {tone.icon}
-                                    <div className="text-sm font-semibold">
-                                      Parcela {i.number}
-                                    </div>
+                                    <div className="text-sm font-semibold">Parcela {i.number}</div>
                                     <Badge
                                       variant="outline"
-                                      className={cn(
-                                        "rounded-full px-2 py-0.5 text-[11px]",
-                                        tone.badge,
-                                      )}
+                                      className={cn("rounded-full px-2 py-0.5 text-[11px]", tone.badge)}
                                     >
                                       {tone.label}
                                     </Badge>
@@ -563,7 +607,7 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
                                 </div>
                               </div>
 
-                              {/* Ações (com destaque laranja quando selecionado) */}
+                              {/* Ações */}
                               <div className="mt-3 flex flex-wrap gap-2">
                                 <Button
                                   type="button"
@@ -629,8 +673,6 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
                                         }
                                       />
                                     </div>
-
-
                                   </div>
 
                                   <div className="space-y-1">
@@ -648,21 +690,19 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
                                     />
                                   </div>
 
-                                  <div className="space-y-1">
-                                    <Button
-                                      className="w-full bg-orange-500 hover:bg-orange-600"
-                                      disabled={!canAct}
-                                      onClick={() =>
-                                        handleCreatePartialPayment({
-                                          ownerId: row.owner.id,
-                                          purchaseId: selectedPurchase.purchaseId,
-                                          installmentNumber: i.number,
-                                        })
-                                      }
-                                    >
-                                      Salvar
-                                    </Button>
-                                  </div>
+                                  <Button
+                                    className="w-full bg-orange-500 hover:bg-orange-600"
+                                    disabled={!canAct}
+                                    onClick={() =>
+                                      handleCreatePartialPayment({
+                                        ownerId: row.owner.id,
+                                        purchaseId: selectedPurchase.purchaseId,
+                                        installmentNumber: i.number,
+                                      })
+                                    }
+                                  >
+                                    Salvar
+                                  </Button>
                                 </div>
                               ) : null}
 
@@ -720,10 +760,23 @@ export function ExhibitorPaymentsDialog({ open, onOpenChange, ownerFairId, fairI
                           )
                         })}
                       </div>
+
+                      {/* ✅ Modal: desconto/acréscimo (clean) */}
+                      <PurchaseAdjustmentDialog
+                        open={adjustDialogOpen}
+                        onOpenChange={setAdjustDialogOpen}
+                        disabled={!canAct || !selectedPurchase}
+                        exhibitorName={row?.owner?.fullName ?? null}
+                        purchaseLabel={
+                          selectedPurchase ? stallSizeLabel(selectedPurchase.stallSize) : null
+                        }
+                        defaultType="DISCOUNT"
+                        onConfirm={handleConfirmAdjustment}
+                      />
                     </div>
                   )}
 
-                  {settle.isError || createPayment.isError || reschedule.isError ? (
+                  {settle.isError || createPayment.isError || reschedule.isError || createAdjustment.isError ? (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                       Não foi possível atualizar os pagamentos. Verifique o backend e tente novamente.
                     </div>

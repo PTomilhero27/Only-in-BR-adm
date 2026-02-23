@@ -2,9 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   listFairExhibitors,
   updateFairExhibitorStatus,
-  settleFairExhibitorInstallments,
-  createInstallmentPayment,
-  reschedulePurchaseInstallment,
 
   // ✅ NOVO
   updateFairExhibitorObservations,
@@ -12,9 +9,6 @@ import {
 
 import type {
   OwnerFairStatus,
-  SettleInstallmentsInput,
-  CreateInstallmentPaymentInput,
-  RescheduleInstallmentInput,
 
   // ✅ NOVO
   UpdateExhibitorObservationsInput,
@@ -69,80 +63,6 @@ export function useUpdateFairExhibitorObservationsMutation(fairId: string) {
       updateFairExhibitorObservations({
         fairId,
         ownerId: vars.ownerId,
-        input: vars.input,
-      }),
-
-    onSettled: async () => {
-      await qc.invalidateQueries({ queryKey: fairExhibitorsQueryKeys.list(fairId) })
-    },
-  })
-}
-
-/**
- * PATCH /fairs/:fairId/exhibitors/:ownerId/payment/installments/settle
- */
-export function useSettleInstallmentsMutation(fairId: string) {
-  const qc = useQueryClient()
-
-  return useMutation({
-    mutationFn: (vars: { ownerId: string; input: SettleInstallmentsInput }) =>
-      settleFairExhibitorInstallments({
-        fairId,
-        ownerId: vars.ownerId,
-        input: vars.input,
-      }),
-
-    onSettled: async () => {
-      await qc.invalidateQueries({ queryKey: fairExhibitorsQueryKeys.list(fairId) })
-    },
-  })
-}
-
-/**
- * POST /fairs/:fairId/exhibitors/:ownerId/purchases/:purchaseId/installments/:number/payments
- */
-export function useCreateInstallmentPaymentMutation(fairId: string) {
-  const qc = useQueryClient()
-
-  return useMutation({
-    mutationFn: (vars: {
-      ownerId: string
-      purchaseId: string
-      installmentNumber: number
-      input: CreateInstallmentPaymentInput
-    }) =>
-      createInstallmentPayment({
-        fairId,
-        ownerId: vars.ownerId,
-        purchaseId: vars.purchaseId,
-        installmentNumber: vars.installmentNumber,
-        input: vars.input,
-      }),
-
-    onSettled: async () => {
-      await qc.invalidateQueries({ queryKey: fairExhibitorsQueryKeys.list(fairId) })
-    },
-  })
-}
-
-/**
- * PATCH /fairs/:fairId/exhibitors/:ownerId/purchases/:purchaseId/installments/:number/reschedule
- */
-export function useRescheduleInstallmentMutation(fairId: string) {
-  const qc = useQueryClient()
-
-  return useMutation({
-    mutationFn: (vars: {
-      ownerId: string
-      purchaseId: string
-      installmentNumber: number
-      input: RescheduleInstallmentInput
-    }) =>
-      reschedulePurchaseInstallment({
-        fairId,
-        ownerId: vars.ownerId,
-        purchaseId: vars.purchaseId,
-        installmentNumber: vars.installmentNumber,
         input: vars.input,
       }),
 

@@ -8,20 +8,6 @@ import {
   UpdateExhibitorStatusResponseSchema,
   type UpdateExhibitorStatusResponse,
 
-  SettleInstallmentsInputSchema,
-  type SettleInstallmentsInput,
-  SettleInstallmentsResponseSchema,
-  type SettleInstallmentsResponse,
-
-  RescheduleInstallmentInputSchema,
-  type RescheduleInstallmentInput,
-
-  CreateInstallmentPaymentInputSchema,
-  type CreateInstallmentPaymentInput,
-
-  InstallmentPaymentActionResponseSchema,
-  type InstallmentPaymentActionResponse,
-
   // ✅ NOVO
   UpdateExhibitorObservationsInputSchema,
   type UpdateExhibitorObservationsInput,
@@ -137,62 +123,4 @@ export async function updateFairExhibitorObservations(params: {
       : { ownerFair: data }
 
   return UpdateExhibitorObservationsResponseSchema.parse(normalized)
-}
-
-/**
- * PATCH /fairs/:fairId/exhibitors/:ownerId/payment/installments/settle
- */
-export async function settleFairExhibitorInstallments(params: {
-  fairId: string
-  ownerId: string
-  input: SettleInstallmentsInput
-}): Promise<SettleInstallmentsResponse> {
-  const input = SettleInstallmentsInputSchema.parse(params.input)
-
-  const data = await api.patch(
-    `fairs/${params.fairId}/exhibitors/${params.ownerId}/payment/installments/settle`,
-    input,
-  )
-
-  return SettleInstallmentsResponseSchema.parse(data)
-}
-
-/**
- * PATCH /fairs/:fairId/exhibitors/:ownerId/purchases/:purchaseId/installments/:number/reschedule
- */
-export async function reschedulePurchaseInstallment(params: {
-  fairId: string
-  ownerId: string
-  purchaseId: string
-  installmentNumber: number
-  input: RescheduleInstallmentInput
-}): Promise<InstallmentPaymentActionResponse> {
-  const input = RescheduleInstallmentInputSchema.parse(params.input)
-
-  const data = await api.patch(
-    `fairs/${params.fairId}/exhibitors/${params.ownerId}/purchases/${params.purchaseId}/installments/${params.installmentNumber}/reschedule`,
-    input,
-  )
-
-  return InstallmentPaymentActionResponseSchema.parse(data)
-}
-
-/**
- * POST /fairs/:fairId/exhibitors/:ownerId/purchases/:purchaseId/installments/:number/payments
- */
-export async function createInstallmentPayment(params: {
-  fairId: string
-  ownerId: string
-  purchaseId: string
-  installmentNumber: number
-  input: CreateInstallmentPaymentInput
-}): Promise<InstallmentPaymentActionResponse> {
-  const input = CreateInstallmentPaymentInputSchema.parse(params.input)
-
-  const data = await api.post(
-    `fairs/${params.fairId}/exhibitors/${params.ownerId}/purchases/${params.purchaseId}/installments/${params.installmentNumber}/payments`,
-    input,
-  )
-
-  return InstallmentPaymentActionResponseSchema.parse(data)
 }
