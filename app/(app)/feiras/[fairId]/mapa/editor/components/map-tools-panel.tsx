@@ -23,6 +23,7 @@ const tools: { key: MapTool; label: string; hotkey: string }[] = [
   { key: "LINE", label: "Linha", hotkey: "5" },
   { key: "TEXT", label: "Texto", hotkey: "6" },
   { key: "TREE", label: "Árvore", hotkey: "7" },
+  { key: "CIRCLE", label: "Círculo", hotkey: "8" }, // ✅ novo
 ];
 
 export function MapToolsPanel({ tool, onChangeTool, isEditMode }: Props) {

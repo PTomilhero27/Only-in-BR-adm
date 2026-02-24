@@ -38,9 +38,11 @@ export const mapTemplatesService = {
    * Detalhe do template (inclui elements).
    */
   async getById(templateId: string): Promise<MapTemplateWithElements> {
-    return api.get(`map-templates/${templateId}`, mapTemplateWithElementsSchema, {
+    
+    const res = await api.get(`map-templates/${templateId}`, mapTemplateWithElementsSchema, {
       cache: "no-store",
     });
+    return res;
   },
 
   /**

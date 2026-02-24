@@ -11,6 +11,7 @@ export const mapElementTypeSchema = z.enum([
   "LINE",
   "TEXT",
   "TREE",
+  "CIRCLE", // ✅ novo
 ]);
 
 export type MapElementType = z.infer<typeof mapElementTypeSchema>;

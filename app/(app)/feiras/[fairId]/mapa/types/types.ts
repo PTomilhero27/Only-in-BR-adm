@@ -2,6 +2,10 @@
  * Tipos do Editor de Mapa 2D.
  * Ajuste: diferenciar retângulos por "rectKind" (BOOTH/RECT/SQUARE),
  * pois regras e UI do inspector mudam conforme o tipo.
+ *
+ * Decisão:
+ * - "BOOTH" continua sendo um RECT com rectKind="BOOTH" (facilita link e numeração).
+ * - "CIRCLE" vira um tipo próprio (CircleElement), pois a propriedade principal é "radius".
  */
 
 export type MapTool =
@@ -11,9 +15,10 @@ export type MapTool =
   | "SQUARE"
   | "LINE"
   | "TEXT"
-  | "TREE";
+  | "TREE"
+  | "CIRCLE";
 
-export type MapElementType = "RECT" | "LINE" | "TEXT" | "TREE";
+export type MapElementType = "RECT" | "LINE" | "TEXT" | "TREE" | "CIRCLE";
 
 export type MapStyle = {
   fill: string;
@@ -78,4 +83,19 @@ export type TreeElement = MapElementBase & {
   label?: string;
 };
 
-export type MapElement = RectElement | LineElement | TextElement | TreeElement;
+/**
+ * ✅ NOVO: elemento circular genérico
+ * - Útil para “rotatórias”, “ilhas”, “canteiros”, “pontos” etc.
+ * - Mantemos apenas radius (não elipse) para simplicidade e consistência no transformer.
+ */
+export type CircleElement = MapElementBase & {
+  type: "CIRCLE";
+  radius: number;
+};
+
+export type MapElement =
+  | RectElement
+  | LineElement
+  | TextElement
+  | TreeElement
+  | CircleElement;

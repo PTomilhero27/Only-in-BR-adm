@@ -13,7 +13,11 @@ export const mapElementTypeSchema = z.enum([
   "LINE",
   "TEXT",
   "TREE",
+  "CIRCLE", // ✅ novo
 ]);
+
+// ✅ style como record (Zod v4 precisa key + value)
+export const mapElementStyleSchema = z.record(z.string(), z.any()).default({});
 
 export const mapTemplateElementSchema = z.object({
   clientKey: z.string(),
@@ -23,15 +27,16 @@ export const mapTemplateElementSchema = z.object({
   y: z.number(),
   rotation: z.number().optional().default(0),
 
-  width: z.number().optional(),
-  height: z.number().optional(),
+  width: z.number().optional().nullable(),
+  height: z.number().optional().nullable(),
+
   label: z.string().optional().nullable(),
   number: z.number().optional().nullable(),
 
   points: z.any().optional().nullable(), // array number[] no backend (Json)
-  radius: z.number().optional().nullable(),
+  radius: z.number().optional().nullable(), // ✅ CIRCLE/TREE usam isso
 
-  style: z.any(), // Json
+  style: mapElementStyleSchema, // ✅ robusto
 
   isLinkable: z.boolean().optional().default(false),
 });
@@ -39,7 +44,7 @@ export const mapTemplateElementSchema = z.object({
 export type MapTemplateElement = z.infer<typeof mapTemplateElementSchema>;
 
 export const mapTemplateSchema = z.object({
-  id: z.string(), 
+  id: z.string(),
   title: z.string(),
   description: z.string().optional().nullable(),
   backgroundUrl: z.string().optional().nullable(),

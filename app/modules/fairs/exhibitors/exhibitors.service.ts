@@ -56,12 +56,6 @@ export async function listFairExhibitors(
    */
   const data = await api.get(url)
 
-  // ✅ Debug opcional (somente em desenvolvimento)
-  if (process.env.NODE_ENV !== "production") {
-    // eslint-disable-next-line no-console
-    console.log("[listFairExhibitors] raw payload =", data)
-  }
-
   try {
     return FairExhibitorsResponseSchema.parse(data)
   } catch (err) {
@@ -71,9 +65,6 @@ export async function listFairExhibitors(
       error: err,
       data,
     })
-
-    // eslint-disable-next-line no-console
-    console.error(message)
 
     /**
      * Lançamos um erro "legível" para o React Query.

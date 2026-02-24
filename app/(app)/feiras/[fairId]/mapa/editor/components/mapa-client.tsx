@@ -244,10 +244,8 @@ function renumberBooths(elements: MapElement[]): MapElement[] {
   if (booths.length === 0) return elements;
 
   const sorted = [...booths].sort((a, b) => {
-    const na =
-      typeof a.number === "number" ? a.number : Number.MAX_SAFE_INTEGER;
-    const nb =
-      typeof b.number === "number" ? b.number : Number.MAX_SAFE_INTEGER;
+    const na = typeof a.number === "number" ? a.number : Number.MAX_SAFE_INTEGER;
+    const nb = typeof b.number === "number" ? b.number : Number.MAX_SAFE_INTEGER;
     if (na !== nb) return na - nb;
     return String(a.id).localeCompare(String(b.id));
   });
@@ -291,7 +289,7 @@ function selectionIsHomogeneous(elements: MapElement[], selectedIds: string[]) {
 }
 
 /**
- * ✅ Ferramentas por hotkey (1..7)
+ * ✅ Ferramentas por hotkey (1..8)
  */
 const toolByHotkey: Record<string, MapTool> = {
   "1": "SELECT",
@@ -301,16 +299,11 @@ const toolByHotkey: Record<string, MapTool> = {
   "5": "LINE",
   "6": "TEXT",
   "7": "TREE",
+  "8": "CIRCLE",
 };
 
 /**
  * Serializa o elemento do canvas para o formato esperado pela API de templates.
- *
- * Decisão:
- * - O backend atual não tem colunas específicas para TEXT (fontSize/boxed etc.).
- * - Para não perder contexto, salvamos:
- *   - label: texto do elemento
- *   - style: inclui propriedades extras (fontSize/boxed/padding/borderRadius) junto do style base
  */
 function canvasElementToTemplateElement(el: MapElement) {
   if (el.type === "LINE") {
@@ -338,6 +331,20 @@ function canvasElementToTemplateElement(el: MapElement) {
     };
   }
 
+  if (el.type === "CIRCLE") {
+    return {
+      clientKey: el.id,
+      type: "CIRCLE" as const,
+      x: el.x,
+      y: el.y,
+      rotation: el.rotation ?? 0,
+      radius: Number((el as any).radius ?? 45),
+      label: (el as any).label ?? null,
+      style: normalizeStyle((el as any).style),
+      isLinkable: false,
+    };
+  }
+
   if (el.type === "TEXT") {
     const baseStyle = normalizeStyle((el as any).style);
     const text = String((el as any).text ?? "").trim() || "Texto";
@@ -360,10 +367,10 @@ function canvasElementToTemplateElement(el: MapElement) {
         padding,
         borderRadius,
       } as any,
+      isLinkable: false,
     };
   }
 
-  // RECT
   const rectKind = (el as any).rectKind as "BOOTH" | "RECT" | "SQUARE";
   const type =
     rectKind === "BOOTH"
@@ -396,7 +403,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
   const [tool, setTool] = React.useState<MapTool>("SELECT");
   const [isEditMode, setIsEditMode] = React.useState(true);
 
-  // Config global para BOOTH (quadrado)
   const [boothConfig, setBoothConfig] = React.useState({
     boothSize: 70,
     gap: 8,
@@ -407,24 +413,15 @@ export function MapaClient({ fairId }: { fairId: string }) {
     [boothConfig],
   );
 
-  // Blueprint local
   const [localBlueprintUrl, setLocalBlueprintUrl] = React.useState<string | null>(
     null,
   );
   const [isBlueprintVisible, setIsBlueprintVisible] = React.useState(true);
   const [viewportToken, setViewportToken] = React.useState(0);
 
-  // Settings Dialog
   const [settingsOpen, setSettingsOpen] = React.useState(false);
-
-  // Generate Booths Dialog
   const [genOpen, setGenOpen] = React.useState(false);
 
-  /**
-   * ✅ Modal operacional de vínculo BOOTH_SLOT ↔ StallFair.
-   * - Só abrimos no modo operacional (Edit OFF).
-   * - slotClientKey no backend = id do elemento (clientKey) no canvas.
-   */
   const [linkDialogOpen, setLinkDialogOpen] = React.useState(false);
   const [activeSlotClientKey, setActiveSlotClientKey] = React.useState<string | null>(
     null,
@@ -438,37 +435,41 @@ export function MapaClient({ fairId }: { fairId: string }) {
   const hasBlueprint = !!(localBlueprintUrl ?? templateBackgroundUrl);
 
   const backgroundUrl = isBlueprintVisible
-    ? localBlueprintUrl ?? templateBackgroundUrl ?? undefined
+    ? (localBlueprintUrl ?? templateBackgroundUrl ?? undefined)
     : undefined;
 
-  /**
-   * ✅ Links atuais do mapa (slotClientKey → stallFairId + resumo stallFair)
-   */
+
   const linkedBoothIds = React.useMemo(() => {
     const ids = (fairMap.data?.links ?? []).map((l: any) =>
-      String(l.slotClientKey),
+      String(l?.slotClientKey ?? ""),
     );
-    return new Set(ids);
+    const set = new Set(ids.filter(Boolean));
+    return set;
   }, [fairMap.data?.links]);
 
   const linkBySlotClientKey = React.useMemo(() => {
     const map = new Map<string, any>();
     for (const l of fairMap.data?.links ?? []) {
-      map.set(String((l as any).slotClientKey), l);
+      const k = String((l as any)?.slotClientKey ?? "");
+      if (k) map.set(k, l);
     }
     return map;
   }, [fairMap.data?.links]);
 
   const activeLink = React.useMemo(() => {
     if (!activeSlotClientKey) return null;
-    return linkBySlotClientKey.get(activeSlotClientKey) ?? null;
+    const v = linkBySlotClientKey.get(activeSlotClientKey) ?? null;
+    return v;
   }, [activeSlotClientKey, linkBySlotClientKey]);
 
+  // ✅ o payload novo vem em `fairMap.data.template.elements`
   const templateElements = fairMap.data?.template?.elements ?? [];
+
 
   const initialElements = React.useMemo<MapElement[]>(() => {
     const raw = templateElements as MapTemplateElement[];
-    return raw.map((el) => adaptTemplateElementToCanvasElement(el));
+    const mapped = raw.map((el) => adaptTemplateElementToCanvasElement(el));
+    return mapped;
   }, [templateElements]);
 
   const elementsState = useUndoRedo<MapElement[]>([]);
@@ -476,18 +477,23 @@ export function MapaClient({ fairId }: { fairId: string }) {
 
   const setElements = React.useCallback<
     React.Dispatch<React.SetStateAction<MapElement[]>>
-  >(
-    (action) => elementsState.set(action),
-    [elementsState],
-  );
+  >((action) => elementsState.set(action), [elementsState]);
 
   React.useEffect(() => {
     elementsState.reset(initialElements);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(initialElements)]);
 
-  // ✅ MULTI selection
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const selectedIdsRef = React.useRef<string[]>([]);
+  React.useEffect(() => void (selectedIdsRef.current = selectedIds), [selectedIds]);
+
+  const toolRef = React.useRef<MapTool>("SELECT");
+  React.useEffect(() => void (toolRef.current = tool), [tool]);
+
+  const isEditModeRef = React.useRef<boolean>(true);
+  React.useEffect(() => void (isEditModeRef.current = isEditMode), [isEditMode]);
+
   const selected = React.useMemo(() => {
     if (selectedIds.length !== 1) return null;
     return elements.find((e) => e.id === selectedIds[0]) ?? null;
@@ -498,11 +504,9 @@ export function MapaClient({ fairId }: { fairId: string }) {
     [elements, selectedIds],
   );
 
-  // cleanup blob
   React.useEffect(() => {
     return () => {
-      if (localBlueprintUrl?.startsWith("blob:"))
-        URL.revokeObjectURL(localBlueprintUrl);
+      if (localBlueprintUrl?.startsWith("blob:")) URL.revokeObjectURL(localBlueprintUrl);
     };
   }, [localBlueprintUrl]);
 
@@ -521,7 +525,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
     setViewportToken((v) => v + 1);
   }
 
-  // ===== create tools =====
   const onCreateAtPoint = React.useCallback(
     (pt: { x: number; y: number }) => {
       if (!isEditMode) return;
@@ -584,6 +587,27 @@ export function MapaClient({ fairId }: { fairId: string }) {
         return;
       }
 
+      if (tool === "CIRCLE") {
+        const circle: MapElement = {
+          id: newClientId("circle"),
+          type: "CIRCLE",
+          x: snapInt(pt.x),
+          y: snapInt(pt.y),
+          rotation: 0,
+          radius: 45,
+          style: {
+            fill: "#E2E8F0",
+            stroke: "#0F172A",
+            strokeWidth: 2,
+            opacity: 0.75,
+          },
+        } as any;
+
+        setElements((prev) => [...prev, circle]);
+        setSelectedIds([circle.id]);
+        return;
+      }
+
       if (tool === "TEXT") {
         const text: MapElement = {
           id: newClientId("text"),
@@ -629,19 +653,12 @@ export function MapaClient({ fairId }: { fairId: string }) {
         setSelectedIds([tree.id]);
         return;
       }
-
-      // LINE é criado no canvas (click-and-click)
-      if (tool === "LINE") return;
     },
     [isEditMode, setElements, tool],
   );
 
-  // ===== hotkeys / copy paste / delete =====
   const copyRef = React.useRef<MapElement | null>(null);
 
-  /**
-   * Estado do desenho de linha (click and click)
-   */
   const [lineDraft, setLineDraft] = React.useState<{
     active: boolean;
     points: number[];
@@ -710,14 +727,12 @@ export function MapaClient({ fairId }: { fairId: string }) {
 
       const isCtrl = e.ctrlKey || e.metaKey;
 
-      // ✅ Hotkeys 1..7 (sem Ctrl) — só no modo edição
       if (!isCtrl && isEditMode && toolByHotkey[e.key]) {
         e.preventDefault();
         setTool(toolByHotkey[e.key]);
         return;
       }
 
-      // Undo/Redo
       if (isCtrl && e.key.toLowerCase() === "z") {
         e.preventDefault();
         elementsState.undo();
@@ -729,7 +744,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
         return;
       }
 
-      // ✅ Desenho de linha: Enter/Esc finaliza/cancela
       if (lineDraft.active) {
         if (e.key === "Escape") {
           e.preventDefault();
@@ -752,7 +766,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
         }
       }
 
-      // Delete/Backspace apaga seleção (somente em modo edição)
       if ((e.key === "Delete" || e.key === "Backspace") && isEditMode) {
         if (selectedIds.length === 0) return;
         e.preventDefault();
@@ -760,7 +773,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
         return;
       }
 
-      // Copy
       if (isCtrl && e.key.toLowerCase() === "c") {
         if (!selected || selectedIds.length !== 1) return;
         e.preventDefault();
@@ -768,7 +780,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
         return;
       }
 
-      // Paste
       if (isCtrl && e.key.toLowerCase() === "v") {
         if (!copyRef.current) return;
         e.preventDefault();
@@ -787,7 +798,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
           return;
         }
 
-        if (src.type === "TEXT" || src.type === "TREE") {
+        if (src.type === "TEXT" || src.type === "TREE" || src.type === "CIRCLE") {
           next.x = snapInt((src as any).x + dx);
           next.y = snapInt((src as any).y + dy);
           setElements((prev) => [...prev, next]);
@@ -801,15 +812,8 @@ export function MapaClient({ fairId }: { fairId: string }) {
             const gap = boothConfigRef.current.gap;
 
             const existingBooths = elements
-              .filter(
-                (e) => e.type === "RECT" && (e as any).rectKind === "BOOTH",
-              )
-              .map((e: any) => ({
-                x: e.x,
-                y: e.y,
-                w: e.width,
-                h: e.height,
-              }));
+              .filter((e) => e.type === "RECT" && (e as any).rectKind === "BOOTH")
+              .map((e: any) => ({ x: e.x, y: e.y, w: e.width, h: e.height }));
 
             const pos = findNextGridSpotForBooth({
               baseX: (src as any).x,
@@ -824,8 +828,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
             next.width = boothSize;
             next.height = boothSize;
             next.rotation = 0;
-
-            // ✅ BOOTH colada ganha número novo no final
             next.number = getNextBoothNumberFrom(elements);
 
             setElements((prev) => [...prev, next]);
@@ -841,7 +843,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
         }
       }
 
-      // Generate booths dialog (Ctrl+Shift+B)
       if (isCtrl && e.shiftKey && e.key.toLowerCase() === "b") {
         if (!isEditMode) return;
         if (
@@ -877,34 +878,22 @@ export function MapaClient({ fairId }: { fairId: string }) {
     setElements,
   ]);
 
-  /**
-   * ✅ Clique operacional em BOOTH_SLOT:
-   */
   const handleOperationalBoothClick = React.useCallback(
-    (slotClientKey: string) => {
+    (slotIdOrClientKey: string) => {
       if (isEditMode) return;
-      setActiveSlotClientKey(slotClientKey);
+
+      const el = elements.find((e) => e.id === slotIdOrClientKey);
+      const resolved = (el as any)?.clientKey ?? slotIdOrClientKey;
+
+      setActiveSlotClientKey(String(resolved));
       setLinkDialogOpen(true);
     },
-    [isEditMode],
+    [isEditMode, elements],
   );
 
   const templateId = (fairMap.data as any)?.template?.id as string | undefined;
   const updateTemplate = useUpdateMapTemplateMutation(templateId ?? "");
 
-  /**
-   * ✅ Salvamento do template (REPLACE de elements).
-   *
-   * Importante:
-   * - O backend incrementa version quando enviamos `elements`.
-   * - Depois do save, invalidamos:
-   *   - map-templates/:id (para refletir version/elements)
-   *   - fairs/:fairId/map (para o editor reabrir consolidado, e também manter links coerentes)
-   *
-   * Observação sobre o erro que você viu:
-   * - Se o client tentar “parsear” um response vazio/undefined, pode estourar Zod.
-   * - Aqui garantimos: só chamamos mutate quando templateId existe e sempre enviamos payload completo.
-   */
   const handleSaveTemplate = React.useCallback(async () => {
     if (!templateId) {
       toast.error({
@@ -924,8 +913,8 @@ export function MapaClient({ fairId }: { fairId: string }) {
     }
 
     try {
-      // ✅ Garantia de numeração coerente antes de salvar
       const normalized = renumberBooths(elements);
+      const serialized = normalized.map((el) => canvasElementToTemplateElement(el));
 
       const payload = {
         title: tpl.title,
@@ -933,17 +922,13 @@ export function MapaClient({ fairId }: { fairId: string }) {
         backgroundUrl: tpl.backgroundUrl ?? null,
         worldWidth: tpl.worldWidth ?? 2000,
         worldHeight: tpl.worldHeight ?? 1200,
-        elements: normalized.map((el) => canvasElementToTemplateElement(el)),
+        elements: serialized,
       };
-
 
       await updateTemplate.mutateAsync(payload as any);
 
-      // ✅ Reflete version/elements atualizados
       await qc.invalidateQueries({ queryKey: mapTemplatesKeys.byId(templateId) });
-      await qc.invalidateQueries({
-        queryKey: fairMapsQueryKeys.byFairId(fairId),
-      });
+      await qc.invalidateQueries({ queryKey: fairMapsQueryKeys.byFairId(fairId) });
 
       toast.success({
         title: "Mapa salvo",
@@ -976,8 +961,8 @@ export function MapaClient({ fairId }: { fairId: string }) {
         <div className="rounded-xl border bg-background p-6">
           <div className="text-lg font-semibold">Mapa ainda não configurado</div>
           <p className="mt-2 text-sm text-muted-foreground">
-            Esta feira ainda não tem uma planta aplicada. Volte para a tela de
-            plantas e aplique um template.
+            Esta feira ainda não tem uma planta aplicada. Volte para a tela de plantas
+            e aplique um template.
           </p>
         </div>
       </div>
@@ -997,7 +982,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
     );
   }
 
-  // animação laterais
   const gridCols = isEditMode
     ? "lg:grid-cols-[280px_1fr_360px]"
     : "lg:grid-cols-[0px_1fr_0px]";
@@ -1025,8 +1009,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
           if (!isEditMode) {
             toast.error({
               title: "Salvar indisponível",
-              subtitle:
-                "Ative o modo edição para salvar alterações do template.",
+              subtitle: "Ative o modo edição para salvar alterações do template.",
             });
             return;
           }
@@ -1038,12 +1021,10 @@ export function MapaClient({ fairId }: { fairId: string }) {
       <MapSettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
-        // planta
         hasBlueprint={hasBlueprint}
         isBlueprintVisible={isBlueprintVisible}
         onToggleBlueprint={() => setIsBlueprintVisible((v) => !v)}
         onPickBlueprintFile={(file) => handlePickBlueprintFile(file)}
-        // edição
         isEditMode={isEditMode}
         onToggleEditMode={() => {
           setIsEditMode((v) => !v);
@@ -1051,7 +1032,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
           setSelectedIds([]);
           cancelLineDraft();
         }}
-        // config booth
         boothSize={boothConfig.boothSize}
         boothGap={boothConfig.gap}
         onChangeBoothConfig={(next) => setBoothConfig(next)}
@@ -1073,15 +1053,11 @@ export function MapaClient({ fairId }: { fairId: string }) {
             return;
 
           const qtyN = Math.max(1, Math.floor(Number(qty) || 1));
-          const sizeN = Math.max(
-            10,
-            Math.round(Number(boothSize) || boothConfig.boothSize),
-          );
+          const sizeN = Math.max(10, Math.round(Number(boothSize) || boothConfig.boothSize));
           const gapN = Math.max(0, Math.round(Number(gap) || boothConfig.gap));
 
           setBoothConfig({ boothSize: sizeN, gap: gapN });
 
-          // ✅ sequência a partir do estado atual
           let rolling = getNextBoothNumberFrom(elements);
 
           const { booths, expandedArea } = buildBoothsInAreaRotated({
@@ -1114,7 +1090,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
         }}
       />
 
-      {/* ✅ Modal operacional de vínculo (Edit OFF) */}
       <BoothSlotLinkDialog
         open={linkDialogOpen}
         onOpenChange={(open) => {
@@ -1134,11 +1109,11 @@ export function MapaClient({ fairId }: { fairId: string }) {
           <LegendPanel />
         </div>
 
-        <div className="relative overflow-hidden rounded-xl border bg-background">
+        <div className="relative overflow-hidden rounded-xl border bg-background touch-none">
           {!canTransform && selectedIds.length > 1 ? (
             <div className="absolute left-3 top-3 z-10 rounded-lg border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-sm">
-              Seleção mista: para mover/rotacionar/redimensionar, selecione apenas
-              itens do mesmo tipo.
+              Seleção mista: para mover/rotacionar/redimensionar, selecione apenas itens do
+              mesmo tipo.
             </div>
           ) : null}
 
@@ -1149,16 +1124,19 @@ export function MapaClient({ fairId }: { fairId: string }) {
             isEditMode={isEditMode && canTransform}
             tool={tool}
             selectedIds={selectedIds}
-            onSelectIds={setSelectedIds}
+            onSelectIds={(ids) => {
+              setSelectedIds(ids);
+            }}
             onCreateAtPoint={onCreateAtPoint}
             viewportToken={viewportToken}
-            // ✅ LINE draw flow
             lineDraft={lineDraft}
-            onLineDraftChange={setLineDraft}
-            onFinishLineDraft={finishLineDraft}
-            // ✅ pintar slots linkados
+            onLineDraftChange={(next) => {
+              setLineDraft(next);
+            }}
+            onFinishLineDraft={() => {
+              finishLineDraft();
+            }}
             linkedBoothIds={linkedBoothIds}
-            // ✅ clique operacional somente quando Edit OFF
             enableOperationalBoothClick={!isEditMode}
             onBoothClick={handleOperationalBoothClick}
           />
@@ -1194,6 +1172,7 @@ function adaptTemplateElementToCanvasElement(el: MapTemplateElement): MapElement
   if ((el as any).type === "LINE") {
     return {
       id: clientKey,
+      clientKey,
       type: "LINE",
       x: 0,
       y: 0,
@@ -1204,11 +1183,13 @@ function adaptTemplateElementToCanvasElement(el: MapTemplateElement): MapElement
   }
 
   if ((el as any).type === "TEXT") {
-    const text = (el as any).text ?? (el as any).label ?? "Texto";
-    const fontSize = (el as any).fontSize ?? (el as any)?.style?.fontSize ?? 18;
+    // payload novo: texto vem em `label`
+    const text = String((el as any).text ?? (el as any).label ?? "").trim() || "Texto";
+    const fontSize = Number((el as any).fontSize ?? (el as any)?.style?.fontSize ?? 18);
 
     return {
       id: clientKey,
+      clientKey,
       type: "TEXT",
       x: (el as any).x ?? 0,
       y: (el as any).y ?? 0,
@@ -1216,27 +1197,43 @@ function adaptTemplateElementToCanvasElement(el: MapTemplateElement): MapElement
       style,
       text,
       fontSize,
-      boxed: (el as any).boxed ?? (el as any)?.style?.boxed ?? true,
-      padding: (el as any).padding ?? (el as any)?.style?.padding ?? 10,
-      borderRadius:
+      boxed: Boolean((el as any).boxed ?? (el as any)?.style?.boxed ?? true),
+      padding: Number((el as any).padding ?? (el as any)?.style?.padding ?? 10),
+      borderRadius: Number(
         (el as any).borderRadius ?? (el as any)?.style?.borderRadius ?? 10,
+      ),
     } as any;
   }
 
   if ((el as any).type === "TREE") {
     return {
       id: clientKey,
+      clientKey,
       type: "TREE",
       x: (el as any).x ?? 0,
       y: (el as any).y ?? 0,
       rotation: (el as any).rotation ?? 0,
       style,
-      radius: ((el as any).radius ?? 14) as number,
+      radius: Number((el as any).radius ?? 14),
       label: (el as any).label ?? undefined,
     } as any;
   }
 
-  const backendType = (el as any).type as string;
+  if ((el as any).type === "CIRCLE") {
+    return {
+      id: clientKey,
+      clientKey,
+      type: "CIRCLE",
+      x: (el as any).x ?? 0,
+      y: (el as any).y ?? 0,
+      rotation: (el as any).rotation ?? 0,
+      style,
+      radius: Number((el as any).radius ?? 45),
+      label: (el as any).label ?? undefined,
+    } as any;
+  }
+
+  const backendType = String((el as any).type ?? "RECT");
   const rectKind =
     backendType === "BOOTH_SLOT"
       ? "BOOTH"
@@ -1246,14 +1243,15 @@ function adaptTemplateElementToCanvasElement(el: MapTemplateElement): MapElement
 
   return {
     id: clientKey,
+    clientKey,
     type: "RECT",
     rectKind,
-    x: (el as any).x ?? 0,
-    y: (el as any).y ?? 0,
-    rotation: (el as any).rotation ?? 0,
+    x: Number((el as any).x ?? 0),
+    y: Number((el as any).y ?? 0),
+    rotation: Number((el as any).rotation ?? 0),
     style,
-    width: ((el as any).width ?? 60) as number,
-    height: ((el as any).height ?? 60) as number,
+    width: Number((el as any).width ?? 60),
+    height: Number((el as any).height ?? 60),
     isLinkable: rectKind === "BOOTH",
     number: rectKind === "BOOTH" ? ((el as any).number ?? undefined) : undefined,
     label: rectKind !== "BOOTH" ? ((el as any).label ?? "") : undefined,
@@ -1282,7 +1280,6 @@ function getErrorMessage(err: unknown) {
   if (!err) return "Erro inesperado.";
   if (typeof err === "string") return err;
   if (typeof err === "object" && err !== null) {
-    // tenta capturar formatos comuns (ApiError/Nest error)
     const anyErr = err as any;
     return (
       anyErr?.message ??

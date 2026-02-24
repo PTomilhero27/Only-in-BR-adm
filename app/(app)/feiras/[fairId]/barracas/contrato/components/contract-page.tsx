@@ -531,8 +531,6 @@ export default function ContractPage() {
       a.remove()
       URL.revokeObjectURL(url)
     } catch (e) {
-      console.error(e)
-      alert(e instanceof Error ? e.message : "Erro ao gerar/enviar PDF. Veja o console.")
     } finally {
       document.documentElement.removeAttribute("data-pdf-mode")
       setDownloading(false)

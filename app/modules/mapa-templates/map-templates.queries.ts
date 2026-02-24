@@ -38,7 +38,6 @@ export function useCreateMapTemplateMutation() {
 }
 
 export function useUpdateMapTemplateMutation(templateId: string) {
-  console.log("Initializing update mutation for templateId:", templateId);
   const qc = useQueryClient();
 
   return useMutation({
