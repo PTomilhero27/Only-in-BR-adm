@@ -729,8 +729,51 @@ export function FairMap2DCanvas({
                   ? String((el as any).label)
                   : "";
 
-              const boothFill = isLinked ? "#BBF7D0" : "#FEF9C3";
-              const boothStroke = isLinked ? "#16A34A" : "#CA8A04";
+              /**
+               * ✅ FIX: antes o BOOTH ignorava a cor do style e sempre pintava com boothFill/boothStroke.
+               * Agora:
+               * - base = style.fill/style.stroke (com defaults de BOOTH se não vier)
+               * - se estiver vinculado, sobrescreve com verde (padrão operacional)
+               */
+              const boothDefaultFill = "#FEF9C3";
+              const boothDefaultStroke = "#CA8A04";
+
+              const boothBaseFill =
+                typeof (el as any)?.style?.fill === "string"
+                  ? (el as any).style.fill
+                  : boothDefaultFill;
+
+              const boothBaseStroke =
+                typeof (el as any)?.style?.stroke === "string"
+                  ? (el as any).style.stroke
+                  : boothDefaultStroke;
+
+              const boothBaseStrokeWidth =
+                typeof (el as any)?.style?.strokeWidth === "number"
+                  ? (el as any).style.strokeWidth
+                  : 2;
+
+              const nodeOpacity = isBooth
+                ? safeNumber((el as any)?.style?.opacity, 0.85)
+                : safeNumber(s.opacity, 1);
+
+              const fill = isBooth
+                ? isLinked
+                  ? "#BBF7D0"
+                  : boothBaseFill
+                : s.fill;
+
+              const stroke = isSelected
+                ? "#0EA5E9"
+                : isBooth
+                  ? isLinked
+                    ? "#16A34A"
+                    : boothBaseStroke
+                  : s.stroke;
+
+              const strokeWidth = isSelected
+                ? Math.max(2, safeNumber(boothBaseStrokeWidth, 2))
+                : safeNumber(isBooth ? boothBaseStrokeWidth : s.strokeWidth, 2);
 
               const groupProps: any = {
                 id: el.id,
@@ -738,7 +781,7 @@ export function FairMap2DCanvas({
                 x,
                 y,
                 rotation,
-                opacity: safeNumber(s.opacity, 1),
+                opacity: nodeOpacity,
                 draggable: canEditNode && isSelected,
 
                 onClick: (evt: any) => {
@@ -771,60 +814,12 @@ export function FairMap2DCanvas({
                   evt.cancelBubble = true;
                   isNodeDraggingRef.current = true;
                   setIsNodeDragging(true);
-
-                  if (!canEditNode || !isSelected) return;
-
-                  dragStartRef.current = {
-                    ids: [...selectedIds],
-                    start: Object.fromEntries(
-                      selectedIds.map((id) => {
-                        const found = elements.find((e) => e.id === id);
-                        return [
-                          id,
-                          found
-                            ? {
-                                x: safeNumber((found as any).x, 0),
-                                y: safeNumber((found as any).y, 0),
-                              }
-                            : { x: 0, y: 0 },
-                        ];
-                      }),
-                    ),
-                    anchorId: el.id,
-                  };
-                },
-
-                onDragMove: (evt: any) => {
-                  evt.cancelBubble = true;
-                  const ctx = dragStartRef.current;
-                  if (!ctx || !ctx.anchorId) return;
-                  if (ctx.anchorId !== el.id) return;
-
-                  const anchorStart = ctx.start[ctx.anchorId];
-                  const dx = evt.target.x() - anchorStart.x;
-                  const dy = evt.target.y() - anchorStart.y;
-
-                  setElements((prev) =>
-                    prev.map((item) => {
-                      if (!ctx.ids.includes(item.id)) return item;
-                      const st = ctx.start[item.id] ?? {
-                        x: safeNumber((item as any).x, 0),
-                        y: safeNumber((item as any).y, 0),
-                      };
-                      return {
-                        ...(item as any),
-                        x: st.x + dx,
-                        y: st.y + dy,
-                      } as any;
-                    }),
-                  );
                 },
 
                 onDragEnd: (evt: any) => {
                   evt.cancelBubble = true;
                   isNodeDraggingRef.current = false;
                   setIsNodeDragging(false);
-                  dragStartRef.current = null;
                 },
 
                 onTransformEnd: (evt: any) => {
@@ -838,15 +833,9 @@ export function FairMap2DCanvas({
                   <Rect
                     width={w}
                     height={h}
-                    fill={isBooth ? boothFill : s.fill}
-                    stroke={
-                      isSelected ? "#0EA5E9" : isBooth ? boothStroke : s.stroke
-                    }
-                    strokeWidth={
-                      isSelected
-                        ? Math.max(2, safeNumber(s.strokeWidth, 2))
-                        : safeNumber(s.strokeWidth, 2)
-                    }
+                    fill={fill}
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
                     cornerRadius={isBooth ? 6 : 8}
                   />
                   {displayText ? (
