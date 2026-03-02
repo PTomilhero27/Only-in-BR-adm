@@ -56,7 +56,9 @@ export const ExcelDatasetSchema = z.enum([
   "OWNER_FAIRS_LIST",
   "OWNER_STALLS_LIST",
   "STALL_FAIRS_LIST",
+  "FAIR_MENU_PRODUCTS_LIST",
 ]);
+
 export type ExcelDataset = z.infer<typeof ExcelDatasetSchema>;
 
 export const ExcelTemplateScopeSchema = z.enum([
@@ -88,6 +90,7 @@ export const EXCEL_MULTI_DATASETS: ExcelDataset[] = [
   "OWNER_FAIRS_LIST",
   "OWNER_STALLS_LIST",
   "STALL_FAIRS_LIST",
+  "FAIR_MENU_PRODUCTS_LIST",
 ];
 
 /**
@@ -464,6 +467,8 @@ export function excelDatasetLabel(dataset: ExcelDataset) {
       return "Expositor • Lista de barracas";
     case "STALL_FAIRS_LIST":
       return "Barraca • Lista de feiras";
+    case "FAIR_MENU_PRODUCTS_LIST":
+      return "Feira • Produtos das barracas";
     default:
       return dataset;
   }
