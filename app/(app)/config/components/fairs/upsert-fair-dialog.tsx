@@ -1,5 +1,22 @@
 'use client'
 
+/**
+ * Este dialog é responsável por criar e editar feiras.
+ *
+ * Responsabilidades:
+ * - Coletar dados básicos da feira
+ * - Coletar ocorrências (quando permitido)
+ * - Coletar taxas sobre venda
+ * - Montar o payload final respeitando o contrato do backend
+ *
+ * Decisões:
+ * - No modo de edição, preservamos o `id` das taxas já existentes.
+ * - A UI continua simples (usuário só digita percentual), mas internamente
+ *   mantemos metadados suficientes para não perder identidade das taxas.
+ * - O nome da taxa continua sendo gerado automaticamente como "Taxa 1", "Taxa 2"...
+ *   para manter o comportamento atual do projeto.
+ */
+
 import { useMemo, useState } from 'react'
 import {
   Dialog,
@@ -22,13 +39,30 @@ export type FairOccurrenceForm = {
 }
 
 /**
- * ✅ Contrato alinhado ao Prisma:
- * Fair.taxes -> FairTax
+ * Contrato enviado ao backend no create/update.
+ *
+ * Regras:
+ * - `id` existe quando a taxa já foi criada anteriormente
+ * - `id` ausente significa nova taxa
  */
 export type FairTaxInput = {
   id?: string
   name: string
   percentBps: number
+}
+
+/**
+ * Shape interno da UI para taxa.
+ *
+ * Decisão:
+ * - Mantemos `id` para edição segura
+ * - Mantemos `percentRaw` como string para facilitar digitação no input
+ * - Mantemos `name` por consistência futura, mesmo que hoje ele seja gerado automaticamente
+ */
+type FairTaxFormItem = {
+  id?: string
+  name: string
+  percentRaw: string
 }
 
 export type UpsertFairDefaultValues = {
@@ -37,10 +71,6 @@ export type UpsertFairDefaultValues = {
   address?: string
   stallsCapacity?: number
   occurrences?: Array<{ startsAt: string; endsAt: string }>
-
-  /**
-   * ✅ vem do backend: FairTax[]
-   */
   taxes?: Array<{
     id: string
     name: string
@@ -48,7 +78,6 @@ export type UpsertFairDefaultValues = {
     isActive: boolean
     createdAt: string
     updatedAt: string
-    fairId: string
   }>
 }
 
@@ -76,6 +105,10 @@ export function UpsertFairDialog({
 }) {
   const [open, setOpen] = useState(false)
 
+  /**
+   * Por padrão, ocorrências só aparecem na criação.
+   * Mantemos a flag para permitir edição no futuro sem reescrever o componente.
+   */
   const showOccurrences = mode === 'create' || allowOccurrencesOnEdit
 
   const [id, setId] = useState<string | undefined>(defaultValues?.id)
@@ -91,16 +124,25 @@ export function UpsertFairDialog({
   ])
 
   /**
-   * ✅ UI: somente percentuais (string)
-   * Envio: taxes[] com name auto + percentBps
+   * Estado das taxas preservando `id`.
+   *
+   * Isso é o ponto principal da correção:
+   * - antes, o componente guardava somente os percentuais
+   * - agora, ele guarda também o `id` da taxa existente
    */
-  const [taxesPercentRaw, setTaxesPercentRaw] = useState<string[]>([''])
+  const [taxes, setTaxes] = useState<FairTaxFormItem[]>([
+    {
+      name: 'Taxa 1',
+      percentRaw: '',
+    },
+  ])
 
   function isoToForm(isoStart: string, isoEnd: string): FairOccurrenceForm {
     const start = new Date(isoStart)
     const end = new Date(isoEnd)
 
     const pad = (n: number) => String(n).padStart(2, '0')
+
     const date = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`
     const startTime = `${pad(start.getHours())}:${pad(start.getMinutes())}`
     const endTime = `${pad(end.getHours())}:${pad(end.getMinutes())}`
@@ -108,16 +150,38 @@ export function UpsertFairDialog({
     return { date, startTime, endTime }
   }
 
+  /**
+   * Converte BPS para string percentual amigável na UI.
+   *
+   * Exemplos:
+   * - 2500 -> "25"
+   * - 1800 -> "18"
+   */
   function bpsToPercentRaw(bps: number) {
     const percent = Number(bps ?? 0) / 100
     return percent === 0 ? '' : String(percent)
   }
 
+  /**
+   * Gera o label padrão da taxa com base na posição visual.
+   *
+   * Mantivemos esse comportamento porque hoje a UI não edita nome manualmente.
+   */
+  function buildAutoTaxName(index: number) {
+    return `Taxa ${index + 1}`
+  }
+
+  /**
+   * Reidrata o formulário quando o dialog abre.
+   *
+   * Decisão:
+   * - Abrir dialog sempre reseta para o estado atual do backend
+   * - Evita ficar com lixo de interação anterior
+   */
   function resetFromDefaults() {
     setId(defaultValues?.id)
     setName(defaultValues?.name ?? '')
     setAddress(defaultValues?.address ?? '')
-
     setStallsCapacityRaw(
       defaultValues?.stallsCapacity !== undefined ? String(defaultValues.stallsCapacity) : '',
     )
@@ -129,19 +193,31 @@ export function UpsertFairDialog({
     }
 
     if (defaultValues?.taxes?.length) {
-      // Só usa as ativas (se quiser mostrar todas, remova o filter)
-      const actives = defaultValues.taxes.filter((t) => t.isActive !== false)
-      setTaxesPercentRaw(
-        (actives.length ? actives : defaultValues.taxes).map((t) => bpsToPercentRaw(t.percentBps)),
+      const sourceTaxes = defaultValues.taxes.filter((t) => t.isActive !== false)
+
+      setTaxes(
+        (sourceTaxes.length ? sourceTaxes : defaultValues.taxes).map((tax, index) => ({
+          id: tax.id,
+          name: tax.name || buildAutoTaxName(index),
+          percentRaw: bpsToPercentRaw(tax.percentBps),
+        })),
       )
     } else {
-      setTaxesPercentRaw([''])
+      setTaxes([
+        {
+          name: 'Taxa 1',
+          percentRaw: '',
+        },
+      ])
     }
   }
 
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen)
-    if (nextOpen) resetFromDefaults()
+
+    if (nextOpen) {
+      resetFromDefaults()
+    }
   }
 
   const stallsCapacityNumber = useMemo(() => {
@@ -152,6 +228,7 @@ export function UpsertFairDialog({
   function formToIso(o: FairOccurrenceForm) {
     const startsAt = new Date(`${o.date}T${o.startTime}`).toISOString()
     const endsAt = new Date(`${o.date}T${o.endTime}`).toISOString()
+
     return { startsAt, endsAt }
   }
 
@@ -167,49 +244,102 @@ export function UpsertFairDialog({
     setOccurrences((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)))
   }
 
-  // -----------------------------
-  // Taxes helpers
-  // -----------------------------
+  // ---------------------------------------------------------
+  // Helpers de taxas
+  // ---------------------------------------------------------
+
+  /**
+   * Adiciona uma nova taxa sem `id`.
+   *
+   * Isso sinaliza ao backend que se trata de uma taxa nova.
+   */
   function addTax() {
-    setTaxesPercentRaw((prev) => [...prev, ''])
+    setTaxes((prev) => [
+      ...prev,
+      {
+        name: buildAutoTaxName(prev.length),
+        percentRaw: '',
+      },
+    ])
   }
 
   function removeTax(index: number) {
-    setTaxesPercentRaw((prev) => prev.filter((_, i) => i !== index))
+    setTaxes((prev) => {
+      const next = prev.filter((_, i) => i !== index)
+
+      /**
+       * Reindexa os nomes automáticos para manter UI consistente.
+       * Mantemos os `id`s já existentes mesmo trocando a posição.
+       */
+      return next.map((item, itemIndex) => ({
+        ...item,
+        name: buildAutoTaxName(itemIndex),
+      }))
+    })
   }
 
   function updateTax(index: number, value: string) {
-    setTaxesPercentRaw((prev) => prev.map((v, i) => (i === index ? value : v)))
+    setTaxes((prev) =>
+      prev.map((item, i) =>
+        i === index
+          ? {
+              ...item,
+              percentRaw: value,
+            }
+          : item,
+      ),
+    )
   }
 
+  /**
+   * Converte percentual digitado na UI para BPS.
+   *
+   * Exemplos:
+   * - "5" => 500
+   * - "18" => 1800
+   * - "25.5" => 2550
+   */
   function percentRawToBps(raw: string) {
-    const v = (raw ?? '').trim()
-    if (!v) return NaN
-    const percent = Number(v.replace(',', '.'))
+    const normalized = (raw ?? '').trim()
+
+    if (!normalized) return NaN
+
+    const percent = Number(normalized.replace(',', '.'))
+
     if (!Number.isFinite(percent)) return NaN
-    return Math.round(percent * 100) // 0.01% => 1 bps
+
+    return Math.round(percent * 100)
   }
 
   const parsedTaxes = useMemo(() => {
-    return taxesPercentRaw.map((raw) => ({
-      raw,
-      percentBps: percentRawToBps(raw),
+    return taxes.map((tax, index) => ({
+      id: tax.id,
+      name: tax.name || buildAutoTaxName(index),
+      raw: tax.percentRaw,
+      percentBps: percentRawToBps(tax.percentRaw),
     }))
-  }, [taxesPercentRaw])
+  }, [taxes])
 
   const taxesErrors = useMemo(() => {
     const errors: string[] = []
 
-    // Se quiser deixar opcional, remova esta regra:
-    if (!parsedTaxes.length) errors.push('Adicione ao menos uma taxa.')
+    if (!parsedTaxes.length) {
+      errors.push('Adicione ao menos uma taxa.')
+    }
 
-    parsedTaxes.forEach((t, idx) => {
-      if (!Number.isFinite(t.percentBps)) {
-        errors.push(`Taxa ${idx + 1}: informe um percentual válido.`)
+    parsedTaxes.forEach((tax, index) => {
+      if (!Number.isFinite(tax.percentBps)) {
+        errors.push(`Taxa ${index + 1}: informe um percentual válido.`)
         return
       }
-      if (t.percentBps < 0) errors.push(`Taxa ${idx + 1}: não pode ser negativa.`)
-      if (t.percentBps > 10000) errors.push(`Taxa ${idx + 1}: não pode passar de 100%.`)
+
+      if (tax.percentBps < 0) {
+        errors.push(`Taxa ${index + 1}: não pode ser negativa.`)
+      }
+
+      if (tax.percentBps > 10000) {
+        errors.push(`Taxa ${index + 1}: não pode passar de 100%.`)
+      }
     })
 
     return errors
@@ -226,6 +356,7 @@ export function UpsertFairDialog({
 
     if (!showOccurrences) return true
     if (!occurrences.length) return false
+
     return occurrences.every((o) => o.date && o.startTime && o.endTime)
   }, [name, address, stallsCapacityNumber, taxesErrors.length, showOccurrences, occurrences])
 
@@ -235,12 +366,16 @@ export function UpsertFairDialog({
     const payloadOccurrences = showOccurrences ? occurrences.map(formToIso) : undefined
 
     /**
-     * ✅ Prisma exige FairTax.name, mas você não quer input:
-     * então geramos automaticamente "Taxa 1", "Taxa 2"...
+     * Payload final respeitando o contrato do backend:
+     * - taxa existente => envia `id`
+     * - taxa nova => não envia `id`
+     *
+     * O nome continua sendo padronizado automaticamente por posição.
      */
-    const taxesPayload: FairTaxInput[] = parsedTaxes.map((t, index) => ({
-      name: `Taxa ${index + 1}`,
-      percentBps: t.percentBps,
+    const taxesPayload: FairTaxInput[] = parsedTaxes.map((tax, index) => ({
+      ...(tax.id ? { id: tax.id } : {}),
+      name: buildAutoTaxName(index),
+      percentBps: tax.percentBps,
     }))
 
     await onSubmit({
@@ -264,13 +399,12 @@ export function UpsertFairDialog({
         <Button variant={mode === 'create' ? 'secondary' : 'default'}>{triggerText}</Button>
       </DialogTrigger>
 
-      {/* ✅ Scroll + layout clean */}
-      <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-hidden p-0">
+      <DialogContent className="max-h-[85vh] overflow-hidden p-0 sm:max-w-xl">
         <DialogHeader className="px-6 pt-6">
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
-        <div className="px-6 overflow-y-auto max-h-[calc(85vh-156px)] pb-6">
+        <div className="max-h-[calc(85vh-156px)] overflow-y-auto px-6 pb-6">
           <div className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="fair-name">Nome</Label>
@@ -313,7 +447,7 @@ export function UpsertFairDialog({
 
             <Separator />
 
-            {/* ✅ Taxes (somente %) */}
+            {/* Taxas */}
             <div className="space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -329,16 +463,16 @@ export function UpsertFairDialog({
               </div>
 
               <div className="space-y-2">
-                {taxesPercentRaw.map((value, index) => (
+                {taxes.map((tax, index) => (
                   <div
-                    key={index}
+                    key={tax.id ?? `new-tax-${index}`}
                     className="flex items-center gap-3 rounded-xl border bg-background px-3 py-2"
                   >
-                    <div className="text-xs text-muted-foreground w-16 shrink-0">
-                      Taxa {index + 1}
+                    <div className="w-16 shrink-0 text-xs text-muted-foreground">
+                      {buildAutoTaxName(index)}
                     </div>
 
-                    <div className="flex-1 flex items-center gap-2">
+                    <div className="flex flex-1 items-center gap-2">
                       <div className="text-sm text-muted-foreground">%</div>
                       <Input
                         type="number"
@@ -346,7 +480,7 @@ export function UpsertFairDialog({
                         max={100}
                         step="0.01"
                         placeholder="Ex.: 5"
-                        value={value}
+                        value={tax.percentRaw}
                         onChange={(e) => updateTax(index, e.target.value)}
                         disabled={isSubmitting}
                         className="h-9"
@@ -357,7 +491,7 @@ export function UpsertFairDialog({
                       type="button"
                       variant="ghost"
                       onClick={() => removeTax(index)}
-                      disabled={isSubmitting || taxesPercentRaw.length === 1}
+                      disabled={isSubmitting || taxes.length === 1}
                       className="h-9 px-2"
                       aria-label={`Remover taxa ${index + 1}`}
                       title="Remover"
@@ -369,9 +503,9 @@ export function UpsertFairDialog({
               </div>
 
               {taxesErrors.length ? (
-                <div className="text-xs text-destructive space-y-1">
-                  {taxesErrors.slice(0, 4).map((e, idx) => (
-                    <div key={idx}>• {e}</div>
+                <div className="space-y-1 text-xs text-destructive">
+                  {taxesErrors.slice(0, 4).map((error, index) => (
+                    <div key={index}>• {error}</div>
                   ))}
                 </div>
               ) : (
@@ -460,7 +594,7 @@ export function UpsertFairDialog({
           </div>
         </div>
 
-        <div className="sticky bottom-0 bg-background border-t px-6 py-4 flex justify-end gap-2">
+        <div className="sticky bottom-0 flex justify-end gap-2 border-t bg-background px-6 py-4">
           <Button variant="outline" onClick={() => setOpen(false)} disabled={isSubmitting}>
             Cancelar
           </Button>

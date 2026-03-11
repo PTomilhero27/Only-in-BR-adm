@@ -1,5 +1,20 @@
 'use client'
 
+/**
+ * Esta seção é responsável por listar, criar e editar feiras no painel administrativo.
+ *
+ * Responsabilidades:
+ * - Buscar as feiras cadastradas
+ * - Abrir modal de criação
+ * - Abrir modal de edição já preenchido com os dados vindos da API
+ * - Encaminhar o payload correto para create/update
+ *
+ * Decisão:
+ * - No modo de edição, enviamos `taxes` com `id` quando a taxa já existe.
+ * - Isso mantém o contrato explícito com o backend e evita que ele interprete
+ *   a edição como exclusão + recriação.
+ */
+
 import { Card } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
@@ -36,7 +51,6 @@ export function FairsAdminSection() {
                 address: payload.address,
                 stallsCapacity: payload.stallsCapacity,
                 occurrences: payload.occurrences ?? [],
-                // ✅ agora é taxes (array)
                 taxes: payload.taxes ?? [],
               })
             }}
@@ -46,7 +60,7 @@ export function FairsAdminSection() {
         <Separator className="my-4" />
 
         {isLoading ? (
-          <div className="text-sm text-muted-foreground flex items-center gap-2">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             Carregando feiras <Spinner />
           </div>
         ) : !data || data.length === 0 ? (
@@ -67,10 +81,13 @@ export function FairsAdminSection() {
                       name: fair.name,
                       address: fair.address ?? '',
                       stallsCapacity: fair.stallsCapacity ?? 0,
-                      // ✅ vem do backend como FairTax[]
-                      taxes: fair.taxes ?? [],
-                      // occurrences (se você um dia permitir editar)
                       occurrences: fair.occurrences ?? [],
+                      /**
+                       * As taxas já existentes precisam vir com `id`.
+                       * Esse `id` será reenviado no submit para o backend
+                       * conseguir diferenciar update de create/delete.
+                       */
+                      taxes: fair.taxes ?? [],
                     }}
                     onSubmit={async (payload) => {
                       if (!payload.id) return
@@ -81,7 +98,6 @@ export function FairsAdminSection() {
                           name: payload.name,
                           address: payload.address,
                           stallsCapacity: payload.stallsCapacity,
-                          // ✅ agora é taxes (array)
                           taxes: payload.taxes ?? [],
                         },
                       })

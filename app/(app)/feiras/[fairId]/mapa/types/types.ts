@@ -1,13 +1,17 @@
 /**
  * Tipos do Editor de Mapa 2D.
- * Ajuste: diferenciar retângulos por "rectKind" (BOOTH/RECT/SQUARE),
- * pois regras e UI do inspector mudam conforme o tipo.
+ *
+ * Esta tipagem representa o contrato atual consumido pelo front.
+ * O backend retorna elementos distintos por `type`, inclusive para
+ * elementos retangulares especiais como `SQUARE` e `BOOTH_SLOT`.
  *
  * Decisão:
- * - "BOOTH" continua sendo um RECT com rectKind="BOOTH" (facilita link e numeração).
- * - "CIRCLE" vira um tipo próprio (CircleElement), pois a propriedade principal é "radius".
+ * - RECT: retângulo genérico com width/height livres
+ * - SQUARE: quadrado genérico
+ * - BOOTH_SLOT: quadrado linkável/numerável usado para barracas
+ * - CIRCLE: elemento circular com radius
+ * - TREE: elemento visual circular com emoji/ícone de árvore
  */
-
 export type MapTool =
   | "SELECT"
   | "BOOTH"
@@ -18,7 +22,14 @@ export type MapTool =
   | "TREE"
   | "CIRCLE";
 
-export type MapElementType = "RECT" | "LINE" | "TEXT" | "TREE" | "CIRCLE";
+export type MapElementType =
+  | "RECT"
+  | "SQUARE"
+  | "BOOTH_SLOT"
+  | "LINE"
+  | "TEXT"
+  | "TREE"
+  | "CIRCLE";
 
 export type MapStyle = {
   fill: string;
@@ -26,8 +37,6 @@ export type MapStyle = {
   strokeWidth: number;
   opacity: number;
 };
-
-export type RectKind = "BOOTH" | "RECT" | "SQUARE";
 
 export type MapElementBase = {
   id: string;
@@ -38,25 +47,66 @@ export type MapElementBase = {
   rotation: number;
 
   style: MapStyle;
+
+  /**
+   * Alguns elementos persistidos também carregam metadados auxiliares
+   * usados no editor e na integração com o backend.
+   */
+  clientKey?: string;
 };
 
 export type RectElement = MapElementBase & {
   type: "RECT";
-  rectKind: RectKind;
 
   width: number;
   height: number;
 
   /**
-   * Somente BOOTH tem número/vínculo.
+   * Label livre para áreas como palco, staff, banheiros etc.
+   */
+  label?: string;
+
+  /**
+   * Campo opcional legado. Mantido temporariamente para compatibilidade
+   * com trechos antigos do editor/inspector.
+   */
+  rectKind?: "RECT";
+};
+
+export type SquareElement = MapElementBase & {
+  type: "SQUARE";
+
+  width: number;
+  height: number;
+
+  /**
+   * Label para tendas, áreas quadradas e blocos visuais.
+   */
+  label?: string;
+
+  /**
+   * Campo opcional legado. Mantido temporariamente para compatibilidade.
+   */
+  rectKind?: "SQUARE";
+};
+
+export type BoothSlotElement = MapElementBase & {
+  type: "BOOTH_SLOT";
+
+  width: number;
+  height: number;
+
+  /**
+   * Barracas podem ser numeradas e vinculadas operacionalmente.
    */
   isLinkable?: boolean;
   number?: number;
+  label?: string;
 
   /**
-   * Somente RECT/SQUARE usam label (ex.: Palco, Camarim).
+   * Campo opcional legado. Mantido temporariamente para compatibilidade.
    */
-  label?: string;
+  rectKind?: "BOOTH";
 };
 
 export type LineElement = MapElementBase & {
@@ -70,7 +120,7 @@ export type TextElement = MapElementBase & {
   fontSize: number;
 
   /**
-   * Texto opcional com “caixa” (borda), para virar um label visual.
+   * Texto opcional com “caixa” (borda), útil para labels visuais.
    */
   boxed?: boolean;
   padding?: number;
@@ -83,11 +133,6 @@ export type TreeElement = MapElementBase & {
   label?: string;
 };
 
-/**
- * ✅ NOVO: elemento circular genérico
- * - Útil para “rotatórias”, “ilhas”, “canteiros”, “pontos” etc.
- * - Mantemos apenas radius (não elipse) para simplicidade e consistência no transformer.
- */
 export type CircleElement = MapElementBase & {
   type: "CIRCLE";
   radius: number;
@@ -95,6 +140,8 @@ export type CircleElement = MapElementBase & {
 
 export type MapElement =
   | RectElement
+  | SquareElement
+  | BoothSlotElement
   | LineElement
   | TextElement
   | TreeElement

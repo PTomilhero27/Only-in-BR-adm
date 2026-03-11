@@ -164,13 +164,6 @@ export function FairMap2DCanvas({
     height: number;
   }>({ visible: false, x: 0, y: 0, width: 0, height: 0 });
 
-  // multi-drag
-  const dragStartRef = React.useRef<{
-    ids: string[];
-    start: Record<string, { x: number; y: number }>;
-    anchorId: string | null;
-  } | null>(null);
-
   const isNodeDraggingRef = React.useRef(false);
   const [isNodeDragging, setIsNodeDragging] = React.useState(false);
 
@@ -370,10 +363,41 @@ export function FairMap2DCanvas({
     );
   }
 
+  /**
+   * Atualiza somente posição/rotação no estado a partir do node real do Konva.
+   * Usamos essa função no drag para garantir que o x/y persistido seja
+   * exatamente o x/y atual do objeto na tela.
+   */
+  function commitPositionFromNode(id: string, node: any) {
+    const x = safeNumber(node.x?.(), 0);
+    const y = safeNumber(node.y?.(), 0);
+    const rotation = safeNumber(node.rotation?.(), 0);
+
+    setElements((prev) =>
+      prev.map((el) => {
+        if (el.id !== id) return el;
+        return {
+          ...(el as any),
+          x,
+          y,
+          rotation,
+        };
+      }),
+    );
+  }
+
+  /**
+   * Consolida alterações de resize/rotate vindas do Transformer.
+   *
+   * Regra:
+   * - RECT mantém width/height independentes
+   * - SQUARE e BOOTH_SLOT sempre permanecem quadrados
+   * - scaleX/scaleY do Transformer são absorvidos em width/height
+   */
   function commitTransformFromNode(id: string, node: any) {
-    const rotation = node.rotation();
-    const x = node.x();
-    const y = node.y();
+    const rotation = safeNumber(node.rotation?.(), 0);
+    const x = safeNumber(node.x?.(), 0);
+    const y = safeNumber(node.y?.(), 0);
 
     const scaleX = safeNumber(node.scaleX?.(), 1);
     const scaleY = safeNumber(node.scaleY?.(), 1);
@@ -385,14 +409,38 @@ export function FairMap2DCanvas({
       prev.map((el) => {
         if (el.id !== id) return el;
 
-        if (el.type === "RECT") {
+        if (
+          el.type === "RECT" ||
+          el.type === "SQUARE" ||
+          el.type === "BOOTH_SLOT"
+        ) {
           const w0 = safeNumber((el as any).width, 60);
           const h0 = safeNumber((el as any).height, 60);
 
-          const width = Math.max(10, w0 * scaleX);
-          const height = Math.max(10, h0 * scaleY);
+          const nextWidth = Math.max(10, w0 * scaleX);
+          const nextHeight = Math.max(10, h0 * scaleY);
 
-          return { ...(el as any), x, y, rotation, width, height };
+          if (el.type === "SQUARE" || el.type === "BOOTH_SLOT") {
+            const size = Math.max(10, Math.max(nextWidth, nextHeight));
+
+            return {
+              ...(el as any),
+              x,
+              y,
+              rotation,
+              width: size,
+              height: size,
+            };
+          }
+
+          return {
+            ...(el as any),
+            x,
+            y,
+            rotation,
+            width: nextWidth,
+            height: nextHeight,
+          };
         }
 
         if (el.type === "TEXT") {
@@ -531,13 +579,11 @@ export function FairMap2DCanvas({
 
           const target = e.target;
 
-          // LINE click-and-click
           if (isEditMode && tool === "LINE" && isMapAreaTarget(target)) {
             addLinePointFromPointer();
             return;
           }
 
-          // Criação de elementos (exceto LINE/SELECT)
           if (
             isEditMode &&
             tool !== "SELECT" &&
@@ -551,7 +597,6 @@ export function FairMap2DCanvas({
             return;
           }
 
-          // Marquee selection
           if (isEditMode && tool === "SELECT" && isMapAreaTarget(target)) {
             const p = stage.getPointerPosition();
             if (!p) return;
@@ -562,7 +607,6 @@ export function FairMap2DCanvas({
             beginSelection(p);
           }
 
-          // Modo operacional: clique no vazio limpa seleção
           if (!isEditMode && isMapAreaTarget(target)) {
             onSelectIds([]);
           }
@@ -577,7 +621,6 @@ export function FairMap2DCanvas({
             onFinishLineDraft?.();
           }
         }}
-        // -------- TOUCH (mobile) --------
         onTouchStart={(e) => {
           const stage = stageRef.current;
           if (!stage) return;
@@ -587,7 +630,6 @@ export function FairMap2DCanvas({
           const touches = e.evt.touches;
           const target = e.target;
 
-          // 2 dedos = pinch
           if (touches && touches.length === 2) {
             const p1 = touchToContainerPoint(touches[0]);
             const p2 = touchToContainerPoint(touches[1]);
@@ -607,7 +649,6 @@ export function FairMap2DCanvas({
             return;
           }
 
-          // 1 dedo no vazio + SELECT = pan manual
           if (touches && touches.length === 1) {
             if (tool === "SELECT" && isMapAreaTarget(target)) {
               isTouchPanningRef.current = true;
@@ -616,13 +657,11 @@ export function FairMap2DCanvas({
             }
           }
 
-          // LINE click-and-click (touch)
           if (isEditMode && tool === "LINE" && isMapAreaTarget(target)) {
             addLinePointFromPointer();
             return;
           }
 
-          // Criação de elementos
           if (
             isEditMode &&
             tool !== "SELECT" &&
@@ -636,7 +675,6 @@ export function FairMap2DCanvas({
             return;
           }
 
-          // Operacional: limpa seleção no vazio
           if (!isEditMode && isMapAreaTarget(target)) {
             onSelectIds([]);
           }
@@ -649,7 +687,6 @@ export function FairMap2DCanvas({
 
           const touches = e.evt.touches;
 
-          // pinch
           if (touches && touches.length === 2) {
             const p1 = touchToContainerPoint(touches[0]);
             const p2 = touchToContainerPoint(touches[1]);
@@ -659,7 +696,6 @@ export function FairMap2DCanvas({
             return;
           }
 
-          // pan manual (1 dedo)
           if (touches && touches.length === 1 && isTouchPanningRef.current) {
             const now = touchToContainerPoint(touches[0]);
             const last = lastPanPointRef.current;
@@ -705,17 +741,19 @@ export function FairMap2DCanvas({
 
             const s = safeStyle((el as any).style);
 
-            // ========= RECT (BOOTH/RECT/SQUARE) =========
-            if (el.type === "RECT") {
+            if (
+              el.type === "RECT" ||
+              el.type === "SQUARE" ||
+              el.type === "BOOTH_SLOT"
+            ) {
               const x = safeNumber(el.x, 0);
               const y = safeNumber(el.y, 0);
               const rotation = safeNumber(el.rotation, 0);
               const w = Math.max(10, safeNumber((el as any).width, 60));
               const h = Math.max(10, safeNumber((el as any).height, 60));
 
-              const isBooth = (el as any).rectKind === "BOOTH";
+              const isBooth = el.type === "BOOTH_SLOT";
 
-              // ✅ vínculo pode estar por id OU por clientKey dependendo do adapter
               const linkKey = (el as any).clientKey ?? el.id;
               const isLinked = isBooth
                 ? !!linkedBoothIds?.has(linkKey) || !!linkedBoothIds?.has(el.id)
@@ -726,15 +764,9 @@ export function FairMap2DCanvas({
                   ? String((el as any).number)
                   : ""
                 : (el as any).label?.trim()
-                  ? String((el as any).label)
-                  : "";
+                    ? String((el as any).label)
+                    : "";
 
-              /**
-               * ✅ FIX: antes o BOOTH ignorava a cor do style e sempre pintava com boothFill/boothStroke.
-               * Agora:
-               * - base = style.fill/style.stroke (com defaults de BOOTH se não vier)
-               * - se estiver vinculado, sobrescreve com verde (padrão operacional)
-               */
               const boothDefaultFill = "#FEF9C3";
               const boothDefaultStroke = "#CA8A04";
 
@@ -805,6 +837,7 @@ export function FairMap2DCanvas({
                 onTap: (evt: any) => {
                   evt.cancelBubble = true;
                   onSelectIds([el.id]);
+
                   if (!isEditMode && enableOperationalBoothClick && isBooth) {
                     onBoothClick?.(el.id);
                   }
@@ -816,8 +849,14 @@ export function FairMap2DCanvas({
                   setIsNodeDragging(true);
                 },
 
+                onDragMove: (evt: any) => {
+                  evt.cancelBubble = true;
+                  commitPositionFromNode(el.id, evt.target);
+                },
+
                 onDragEnd: (evt: any) => {
                   evt.cancelBubble = true;
+                  commitPositionFromNode(el.id, evt.target);
                   isNodeDraggingRef.current = false;
                   setIsNodeDragging(false);
                 },
@@ -838,6 +877,7 @@ export function FairMap2DCanvas({
                     strokeWidth={strokeWidth}
                     cornerRadius={isBooth ? 6 : 8}
                   />
+
                   {displayText ? (
                     <Text
                       text={displayText}
@@ -854,7 +894,6 @@ export function FairMap2DCanvas({
               );
             }
 
-            // ========= LINE =========
             if (el.type === "LINE") {
               const pts = Array.isArray((el as any).points)
                 ? (el as any).points
@@ -890,9 +929,7 @@ export function FairMap2DCanvas({
               );
             }
 
-            // ========= TEXT =========
             if (el.type === "TEXT") {
-              // ✅ prioridade: props do elemento; fallback: alguns adapters antigos jogam isso em style
               const boxed = Boolean((el as any).boxed ?? (el as any).style?.boxed);
               const padding = safeNumber(
                 (el as any).padding ?? (el as any).style?.padding,
@@ -946,8 +983,15 @@ export function FairMap2DCanvas({
                   isNodeDraggingRef.current = true;
                   setIsNodeDragging(true);
                 },
+
+                onDragMove: (evt: any) => {
+                  evt.cancelBubble = true;
+                  commitPositionFromNode(el.id, evt.target);
+                },
+
                 onDragEnd: (evt: any) => {
                   evt.cancelBubble = true;
+                  commitPositionFromNode(el.id, evt.target);
                   isNodeDraggingRef.current = false;
                   setIsNodeDragging(false);
                 },
@@ -987,7 +1031,6 @@ export function FairMap2DCanvas({
               );
             }
 
-            // ========= CIRCLE =========
             if (el.type === "CIRCLE") {
               const x = safeNumber(el.x, 0);
               const y = safeNumber(el.y, 0);
@@ -1030,8 +1073,13 @@ export function FairMap2DCanvas({
                     isNodeDraggingRef.current = true;
                     setIsNodeDragging(true);
                   }}
+                  onDragMove={(evt: any) => {
+                    evt.cancelBubble = true;
+                    commitPositionFromNode(el.id, evt.target);
+                  }}
                   onDragEnd={(evt: any) => {
                     evt.cancelBubble = true;
+                    commitPositionFromNode(el.id, evt.target);
                     isNodeDraggingRef.current = false;
                     setIsNodeDragging(false);
                   }}
@@ -1043,79 +1091,88 @@ export function FairMap2DCanvas({
               );
             }
 
-            // ========= TREE (default) =========
-            const x = safeNumber(el.x, 0);
-            const y = safeNumber(el.y, 0);
-            const rotation = safeNumber(el.rotation, 0);
-            const radius = Math.max(6, safeNumber((el as any).radius, 14));
+            if (el.type === "TREE") {
+              const x = safeNumber(el.x, 0);
+              const y = safeNumber(el.y, 0);
+              const rotation = safeNumber(el.rotation, 0);
+              const radius = Math.max(6, safeNumber((el as any).radius, 14));
 
-            const groupProps: any = {
-              id: el.id,
-              name: "selectable",
-              x,
-              y,
-              rotation,
-              opacity: safeNumber(s.opacity, 1),
-              draggable: canEditNode && isSelected,
+              const groupProps: any = {
+                id: el.id,
+                name: "selectable",
+                x,
+                y,
+                rotation,
+                opacity: safeNumber(s.opacity, 1),
+                draggable: canEditNode && isSelected,
 
-              onClick: (evt: any) => {
-                evt.cancelBubble = true;
-                const additive = evt.evt.shiftKey === true;
-                if (additive) {
-                  onSelectIds(
-                    isSelected
-                      ? selectedIds.filter((v) => v !== el.id)
-                      : [...selectedIds, el.id],
-                  );
-                } else {
+                onClick: (evt: any) => {
+                  evt.cancelBubble = true;
+                  const additive = evt.evt.shiftKey === true;
+                  if (additive) {
+                    onSelectIds(
+                      isSelected
+                        ? selectedIds.filter((v) => v !== el.id)
+                        : [...selectedIds, el.id],
+                    );
+                  } else {
+                    onSelectIds([el.id]);
+                  }
+                },
+                onTap: (evt: any) => {
+                  evt.cancelBubble = true;
                   onSelectIds([el.id]);
-                }
-              },
-              onTap: (evt: any) => {
-                evt.cancelBubble = true;
-                onSelectIds([el.id]);
-              },
+                },
 
-              onDragStart: (evt: any) => {
-                evt.cancelBubble = true;
-                isNodeDraggingRef.current = true;
-                setIsNodeDragging(true);
-              },
-              onDragEnd: (evt: any) => {
-                evt.cancelBubble = true;
-                isNodeDraggingRef.current = false;
-                setIsNodeDragging(false);
-              },
+                onDragStart: (evt: any) => {
+                  evt.cancelBubble = true;
+                  isNodeDraggingRef.current = true;
+                  setIsNodeDragging(true);
+                },
 
-              onTransformEnd: (evt: any) => {
-                evt.cancelBubble = true;
-                commitTransformFromNode(el.id, evt.target);
-              },
-            };
+                onDragMove: (evt: any) => {
+                  evt.cancelBubble = true;
+                  commitPositionFromNode(el.id, evt.target);
+                },
 
-            return (
-              <Group key={el.id} {...groupProps}>
-                <Circle
-                  radius={radius}
-                  fill={s.fill}
-                  stroke={isSelected ? "#0EA5E9" : s.stroke}
-                  strokeWidth={isSelected ? 2 : safeNumber(s.strokeWidth, 2)}
-                />
-                <Text
-                  text={"🌳"}
-                  x={-radius}
-                  y={-radius}
-                  width={radius * 2}
-                  height={radius * 2}
-                  align="center"
-                  verticalAlign="middle"
-                  fontSize={radius}
-                />
-              </Group>
-            );
+                onDragEnd: (evt: any) => {
+                  evt.cancelBubble = true;
+                  commitPositionFromNode(el.id, evt.target);
+                  isNodeDraggingRef.current = false;
+                  setIsNodeDragging(false);
+                },
+
+                onTransformEnd: (evt: any) => {
+                  evt.cancelBubble = true;
+                  commitTransformFromNode(el.id, evt.target);
+                },
+              };
+
+              return (
+                <Group key={el.id} {...groupProps}>
+                  <Circle
+                    radius={radius}
+                    fill={s.fill}
+                    stroke={isSelected ? "#0EA5E9" : s.stroke}
+                    strokeWidth={isSelected ? 2 : safeNumber(s.strokeWidth, 2)}
+                  />
+                  <Text
+                    text="🌳"
+                    x={-radius}
+                    y={-radius}
+                    width={radius * 2}
+                    height={radius * 2}
+                    align="center"
+                    verticalAlign="middle"
+                    fontSize={radius}
+                  />
+                </Group>
+              );
+            }
+
+            return null;
           })}
 
-          {/* Ghost line */}
           {isEditMode &&
           tool === "LINE" &&
           lineDraft?.active &&
@@ -1133,7 +1190,6 @@ export function FairMap2DCanvas({
             />
           ) : null}
 
-          {/* Marquee selection */}
           {selectionRect.visible ? (
             <Rect
               x={selectionRect.x}
@@ -1148,7 +1204,6 @@ export function FairMap2DCanvas({
             />
           ) : null}
 
-          {/* Transformer */}
           {isEditMode && tool === "SELECT" ? (
             <Transformer
               ref={trRef}

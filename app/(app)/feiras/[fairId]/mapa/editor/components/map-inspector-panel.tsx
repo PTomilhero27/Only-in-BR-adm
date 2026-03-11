@@ -3,17 +3,26 @@
 /**
  * MapInspectorPanel
  *
- * Ajustes:
- * - Remove completamente a seção de vínculo (não vamos vincular no editor)
- * - Inputs numéricos agora são type="text" e aceitam apenas números (evita bug do input number)
+ * Esta lateral é responsável por editar os atributos do elemento atualmente
+ * selecionado no editor do mapa.
+ *
+ * Ajustes aplicados:
+ * - remove dependência de `rectKind`
+ * - passa a respeitar o contrato novo com `RECT`, `SQUARE` e `BOOTH_SLOT`
+ * - mantém inputs numéricos como `type="text"` para evitar inconsistências
+ *   comuns do `input[type=number]`
+ * - adiciona suporte explícito para `CIRCLE`
  */
 
 import * as React from "react";
 import type {
   MapElement,
   RectElement,
+  SquareElement,
+  BoothSlotElement,
   TextElement,
   TreeElement,
+  CircleElement,
 } from "../../types/types";
 import { Button } from "@/components/ui/button";
 
@@ -42,7 +51,7 @@ export function MapInspectorPanel({
   }
 
   const title = getElementLabel(selected);
-  const isBooth = selected.type === "RECT" && selected.rectKind === "BOOTH";
+  const isBooth = selected.type === "BOOTH_SLOT";
 
   return (
     <div className="rounded-xl border bg-background p-4">
@@ -81,47 +90,82 @@ export function MapInspectorPanel({
         <div className="rounded-lg border bg-muted/30 p-3">
           <div className="text-sm font-medium">{title}</div>
           <div className="text-xs text-muted-foreground">
-            {isBooth ? "Slot de barraca (número automático)." : "Elemento do mapa."}
+            {isBooth
+              ? "Slot de barraca com numeração automática."
+              : "Elemento do mapa."}
           </div>
         </div>
 
-        {/* RECT / SQUARE: rótulo primeiro */}
-        {selected.type === "RECT" && selected.rectKind !== "BOOTH" ? (
+        {(selected.type === "RECT" || selected.type === "SQUARE") ? (
           <Section title="Rótulo">
             <TextField
               label="Nome do elemento"
               value={selected.label ?? ""}
               disabled={!isEditMode}
               onChange={(v) =>
-                onChange({ ...selected, label: v } as RectElement)
+                onChange({
+                  ...selected,
+                  label: v,
+                } as RectElement | SquareElement)
               }
               placeholder="Ex.: Palco, Entrada, Banheiros..."
             />
           </Section>
         ) : null}
 
-        {/* Dimensões (retângulos) */}
-        {selected.type === "RECT" ? (
+        {(selected.type === "RECT" ||
+          selected.type === "SQUARE" ||
+          selected.type === "BOOTH_SLOT") ? (
           <Section title="Dimensões">
             <NumberTextField
               label="Largura"
               value={selected.width}
               disabled={!isEditMode}
-              onChange={(v) =>
-                onChange({ ...selected, width: clampMin(v, 10) } as RectElement)
-              }
+              onChange={(v) => {
+                if (selected.type === "SQUARE" || selected.type === "BOOTH_SLOT") {
+                  const size = clampMin(v, 10);
+
+                  onChange({
+                    ...selected,
+                    width: size,
+                    height: size,
+                  } as SquareElement | BoothSlotElement);
+
+                  return;
+                }
+
+                onChange({
+                  ...selected,
+                  width: clampMin(v, 10),
+                } as RectElement);
+              }}
             />
+
             <NumberTextField
               label="Altura"
               value={selected.height}
               disabled={!isEditMode}
-              onChange={(v) =>
-                onChange({ ...selected, height: clampMin(v, 10) } as RectElement)
-              }
+              onChange={(v) => {
+                if (selected.type === "SQUARE" || selected.type === "BOOTH_SLOT") {
+                  const size = clampMin(v, 10);
+
+                  onChange({
+                    ...selected,
+                    width: size,
+                    height: size,
+                  } as SquareElement | BoothSlotElement);
+
+                  return;
+                }
+
+                onChange({
+                  ...selected,
+                  height: clampMin(v, 10),
+                } as RectElement);
+              }}
             />
 
-            {/* BOOTH: mostramos o número apenas como info (auto) */}
-            {selected.rectKind === "BOOTH" ? (
+            {selected.type === "BOOTH_SLOT" ? (
               <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                 Número:{" "}
                 <span className="font-medium text-foreground">
@@ -133,7 +177,6 @@ export function MapInspectorPanel({
           </Section>
         ) : null}
 
-        {/* TEXT */}
         {selected.type === "TEXT" ? (
           <Section title="Texto">
             <TextField
@@ -178,7 +221,10 @@ export function MapInspectorPanel({
                   disabled={!isEditMode}
                   onChange={(v) =>
                     onChange(
-                      { ...selected, borderRadius: clampMin(v, 0) } as TextElement
+                      {
+                        ...selected,
+                        borderRadius: clampMin(v, 0),
+                      } as TextElement,
                     )
                   }
                 />
@@ -190,7 +236,6 @@ export function MapInspectorPanel({
           </Section>
         ) : null}
 
-        {/* TREE */}
         {selected.type === "TREE" ? (
           <Section title="Árvore">
             <NumberTextField
@@ -204,7 +249,19 @@ export function MapInspectorPanel({
           </Section>
         ) : null}
 
-        {/* Estilo */}
+        {selected.type === "CIRCLE" ? (
+          <Section title="Círculo">
+            <NumberTextField
+              label="Raio"
+              value={selected.radius}
+              disabled={!isEditMode}
+              onChange={(v) =>
+                onChange({ ...selected, radius: clampMin(v, 10) } as CircleElement)
+              }
+            />
+          </Section>
+        ) : null}
+
         <Section title="Aparência">
           <ColorField
             label="Cor de preenchimento"
@@ -241,7 +298,10 @@ export function MapInspectorPanel({
             value={selected.style.opacity}
             disabled={!isEditMode}
             onChange={(v) =>
-              onChange({ ...selected, style: { ...selected.style, opacity: v } })
+              onChange({
+                ...selected,
+                style: { ...selected.style, opacity: v },
+              })
             }
           />
         </Section>
@@ -252,6 +312,9 @@ export function MapInspectorPanel({
 
 /* ---------------- UI helpers ---------------- */
 
+/**
+ * Agrupa visualmente uma seção do inspector.
+ */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border p-3">
@@ -262,9 +325,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 /**
- * ✅ Input numérico como text (apenas dígitos)
- * - evita bug do <input type="number">
- * - permite digitar tranquilo e ainda entrega number pro estado
+ * Input numérico implementado como text para evitar bugs comuns do
+ * input type="number", especialmente em edição incremental.
  */
 function NumberTextField({
   label,
@@ -299,6 +361,9 @@ function NumberTextField({
   );
 }
 
+/**
+ * Campo de texto simples para labels e conteúdos.
+ */
 function TextField({
   label,
   value,
@@ -331,6 +396,9 @@ function TextField({
   );
 }
 
+/**
+ * Toggle booleano para propriedades como `boxed`.
+ */
 function ToggleField({
   label,
   value,
@@ -352,7 +420,7 @@ function ToggleField({
         onClick={() => onChange(!value)}
         className={[
           "h-7 w-12 rounded-full border transition",
-          value ? "bg-orange-500 border-orange-500" : "bg-background",
+          value ? "border-orange-500 bg-orange-500" : "bg-background",
           disabled ? "opacity-60" : "hover:bg-muted",
         ].join(" ")}
       >
@@ -367,6 +435,9 @@ function ToggleField({
   );
 }
 
+/**
+ * Campo de cor com preview + color picker + input textual.
+ */
 function ColorField({
   label,
   value,
@@ -423,6 +494,9 @@ function ColorField({
   );
 }
 
+/**
+ * Slider para opacidade do elemento.
+ */
 function RangeField({
   label,
   value,
@@ -438,7 +512,9 @@ function RangeField({
     <label className="grid gap-1">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-muted-foreground">{label}</span>
-        <span className="text-xs text-muted-foreground">{Math.round(value * 100)}%</span>
+        <span className="text-xs text-muted-foreground">
+          {Math.round(value * 100)}%
+        </span>
       </div>
 
       <input
@@ -457,15 +533,18 @@ function RangeField({
 
 /* ---------------- Logic helpers ---------------- */
 
+/**
+ * Gera o nome amigável do elemento selecionado para o topo do inspector.
+ */
 function getElementLabel(el: MapElement) {
-  if (el.type === "RECT") {
-    if (el.rectKind === "BOOTH") return "Barraca (slot)";
-    if (el.rectKind === "SQUARE") return "Quadrado";
-    return "Retângulo";
-  }
+  if (el.type === "BOOTH_SLOT") return "Barraca (slot)";
+  if (el.type === "SQUARE") return "Quadrado";
+  if (el.type === "RECT") return "Retângulo";
   if (el.type === "TEXT") return "Texto";
   if (el.type === "LINE") return "Linha";
-  return "Árvore";
+  if (el.type === "CIRCLE") return "Círculo";
+  if (el.type === "TREE") return "Árvore";
+  return "Elemento";
 }
 
 function parseDigitsToNumber(raw: string) {
