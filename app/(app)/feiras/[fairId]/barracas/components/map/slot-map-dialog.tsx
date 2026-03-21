@@ -13,7 +13,14 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { Maximize2, Minimize2, Plus, Save, X } from "lucide-react"
+import { Maximize2, Minimize2, Plus, Save, X, Link as LinkIcon, Copy } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 
 import { MapElement, MapTool } from "../../../mapa/types/types"
 import { FairMap2DCanvas } from "../../../mapa/editor/components/fair-map-2d-canvas"
@@ -23,6 +30,7 @@ import {
   useFairMapQuery,
   useLinkBoothSlotMutation,
 } from "@/app/modules/fair-maps/fair-maps.queries"
+import { useCreateMagicLinkMutation } from "@/app/modules/fair-maps/magic-link.queries"
 import { useUpdateMapTemplateMutation } from "@/app/modules/mapa-templates/map-templates.queries"
 import type { MapTemplateElement } from "@/app/modules/mapa-templates/map-templates.schema"
 
@@ -259,6 +267,7 @@ export function SlotMapDialog({
     setAddingBooth(false)
     setSelectedIds([])
     setSelectedStallFairId(null)
+    setGeneratedLink(null)
     onOpenChange(false)
   }, [onOpenChange])
 
@@ -372,6 +381,29 @@ export function SlotMapDialog({
 
   const canSubmitLink = !!slotClientKey && !!selectedStallFairId && !linkMutation.isPending
 
+  // ✅ magic link
+  const createLinkMutation = useCreateMagicLinkMutation(fairId)
+  const [generatedLink, setGeneratedLink] = React.useState<{ url: string; pin: string; code: string } | null>(null)
+
+  async function handleGenerateLink() {
+    try {
+      const result = await createLinkMutation.mutateAsync()
+      const data = result.magicLink ?? (result as any)
+      
+      const baseUrl = window.location.origin
+      const url = data.url || `${baseUrl}/mapa/${data.code}`
+
+      setGeneratedLink({ url, pin: data.pin, code: data.code })
+    } catch (err) {
+      toast.error({ title: "Erro ao gerar link", subtitle: getErrorMessage(err) })
+    }
+  }
+
+  function handleCopy(text: string, subject: string) {
+    navigator.clipboard.writeText(text)
+    toast.success({ title: "Copiado", subtitle: `${subject} copiado.` })
+  }
+
   // ✅ add booth (simples)
   const onCreateAtPoint = React.useCallback(
     (pt: { x: number; y: number }) => {
@@ -458,6 +490,16 @@ export function SlotMapDialog({
                 </div>
 
                 <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="hidden md:inline-flex gap-2"
+                    onClick={handleGenerateLink}
+                    disabled={createLinkMutation.isPending}
+                  >
+                    <LinkIcon className="h-4 w-4" />
+                    {createLinkMutation.isPending ? "Gerando..." : "Link Mágico"}
+                  </Button>
 
                   <Button
                     variant="outline"
@@ -662,6 +704,46 @@ export function SlotMapDialog({
           </div>
         </div>
       </div>
+
+      {/* ✅ Dialog do Link Mágico */}
+      <Dialog open={!!generatedLink} onOpenChange={(open) => !open && setGeneratedLink(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Link Mágico Gerado</DialogTitle>
+            <DialogDescription>
+              Compartilhe o link abaixo e forneça o PIN para acessar o mapa modo leitura.
+            </DialogDescription>
+          </DialogHeader>
+
+          {generatedLink && (
+            <div className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Link de Acesso</div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 truncate rounded-md border bg-muted p-2 text-sm font-mono">
+                    {generatedLink.url}
+                  </div>
+                  <Button variant="outline" size="icon" onClick={() => handleCopy(generatedLink.url, "Link")}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Código PIN</div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 truncate rounded-md border bg-muted p-2 text-center text-lg tracking-[0.2em] font-mono">
+                    {generatedLink.pin}
+                  </div>
+                  <Button variant="outline" size="icon" onClick={() => handleCopy(generatedLink.pin, "PIN")}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
