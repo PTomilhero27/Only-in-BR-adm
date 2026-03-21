@@ -12,8 +12,10 @@ const emp: EmpresaCnabInfo = {
 const pags: PagamentoPixCnab[] = [
   {
     favorecidoNome: "ANGATU ATELIE",
+    favorecidoTipoInscricao: "1",
+    favorecidoNumeroInscricao: "12345678909",
     pixKey: "12345678909",
-    valorOriginal: 100.50,
+    valor: 100.50,
   }
 ];
 
