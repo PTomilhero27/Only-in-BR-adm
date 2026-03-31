@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { ContractPreviewProvider } from "./barracas/context/contract-preview-context"
+import { GlobalFairProvider } from "./components/global-fair-provider"
 
 /**
  * Layout da Feira (nível: /feiras/[fairId])
@@ -13,5 +14,9 @@ import { ContractPreviewProvider } from "./barracas/context/contract-preview-con
  *   - /feiras/[fairId]/barracas/contrato/[contractId]
  */
 export default function FairLayout({ children }: { children: ReactNode }) {
-  return <ContractPreviewProvider>{children}</ContractPreviewProvider>
+  return (
+    <GlobalFairProvider>
+      <ContractPreviewProvider>{children}</ContractPreviewProvider>
+    </GlobalFairProvider>
+  )
 }

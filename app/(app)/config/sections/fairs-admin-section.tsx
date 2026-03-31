@@ -24,6 +24,7 @@ import { useCreateFairMutation, useUpdateFairMutation } from '@/app/modules/fair
 
 import { UpsertFairDialog } from '../components/fairs/upsert-fair-dialog'
 import { FairAccordionCard } from '../components/fairs/fair-accordion-card'
+import { FinalizeFairButton } from '../components/fairs/finalize-fair-button'
 
 export function FairsAdminSection() {
   const { data, isLoading } = useFairsQuery()
@@ -72,37 +73,45 @@ export function FairsAdminSection() {
                 key={fair.id}
                 fair={fair}
                 actions={
-                  <UpsertFairDialog
-                    mode="edit"
-                    triggerText="Editar"
-                    isSubmitting={updateMutation.isPending}
-                    defaultValues={{
-                      id: fair.id,
-                      name: fair.name,
-                      address: fair.address ?? '',
-                      stallsCapacity: fair.stallsCapacity ?? 0,
-                      occurrences: fair.occurrences ?? [],
-                      /**
-                       * As taxas já existentes precisam vir com `id`.
-                       * Esse `id` será reenviado no submit para o backend
-                       * conseguir diferenciar update de create/delete.
-                       */
-                      taxes: fair.taxes ?? [],
-                    }}
-                    onSubmit={async (payload) => {
-                      if (!payload.id) return
+                  <div className="flex flex-row gap-2">
+                    {fair.status !== 'FINALIZADA' && (
+                      <UpsertFairDialog
+                        mode="edit"
+                        triggerText="Editar"
+                        isSubmitting={updateMutation.isPending}
+                        defaultValues={{
+                          id: fair.id,
+                          name: fair.name,
+                          address: fair.address ?? '',
+                          stallsCapacity: fair.stallsCapacity ?? 0,
+                          occurrences: fair.occurrences ?? [],
+                          /**
+                           * As taxas já existentes precisam vir com `id`.
+                           * Esse `id` será reenviado no submit para o backend
+                           * conseguir diferenciar update de create/delete.
+                           */
+                          taxes: fair.taxes ?? [],
+                        }}
+                        onSubmit={async (payload) => {
+                          if (!payload.id) return
 
-                      await updateMutation.mutateAsync({
-                        id: payload.id,
-                        payload: {
-                          name: payload.name,
-                          address: payload.address,
-                          stallsCapacity: payload.stallsCapacity,
-                          taxes: payload.taxes ?? [],
-                        },
-                      })
-                    }}
-                  />
+                          await updateMutation.mutateAsync({
+                            id: payload.id,
+                            payload: {
+                              name: payload.name,
+                              address: payload.address,
+                              stallsCapacity: payload.stallsCapacity,
+                              taxes: payload.taxes ?? [],
+                            },
+                          })
+                        }}
+                      />
+                    )}
+
+                    {fair.status === 'ATIVA' && (
+                      <FinalizeFairButton fairId={fair.id} />
+                    )}
+                  </div>
                 }
               />
             ))}

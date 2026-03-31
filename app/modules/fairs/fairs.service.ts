@@ -39,3 +39,8 @@ export async function listFairs(params?: { status?: FairStatus }) {
   const data = await api.get(`fairs${query}`);
   return listFairsResponseSchema.parse(data);
 }
+
+export async function finalizeFair(fairId: string): Promise<Fair> {
+  const data = await api.post(`fairs/${fairId}/finalize`);
+  return fairResponseSchema.parse(data);
+}

@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { FileText, Link2, CheckCircle2, AlertTriangle, Clock } from "lucide-react"
+import { useGlobalFair } from "../../../components/global-fair-provider"
 
 type ContractTemplateStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED"
 
@@ -60,6 +61,7 @@ export function FairContractSettingsCard(props: {
 
 
   const { fairName, contractSettings, isLoading, onOpenDialog } = props
+  const { isFinalizada } = useGlobalFair()
 
   const templateStatusBadge = useMemo(() => {
     const s = contractSettings?.template?.status
@@ -204,7 +206,7 @@ export function FairContractSettingsCard(props: {
           <Button
             onClick={onOpenDialog}
             className="gap-2"
-            disabled={Boolean(isLoading)}
+            disabled={Boolean(isLoading) || isFinalizada}
           >
             <Link2 className="h-4 w-4" />
             {contractSettings ? "Alterar contrato" : "Vincular contrato"}

@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Eye, Pencil, CreditCard, MoreVertical, FileText } from "lucide-react"
+import { useGlobalFair } from "../../../components/global-fair-provider"
 
 type Props = {
   row: FairExhibitorRow
@@ -42,6 +43,7 @@ export function FairStallsRowActions({
   onOpenContract,
 }: Props) {
   const hasPayment = !!row.payment
+  const { isFinalizada } = useGlobalFair()
 
   return (
     <DropdownMenu>
@@ -69,7 +71,7 @@ export function FairStallsRowActions({
 
         <DropdownMenuSeparator />
 
-        <DropdownMenuItem onClick={() => onChangeStatus(row)}>
+        <DropdownMenuItem onClick={() => onChangeStatus(row)} disabled={isFinalizada}>
           <Pencil className="mr-2 h-4 w-4" />
           Alterar status
         </DropdownMenuItem>

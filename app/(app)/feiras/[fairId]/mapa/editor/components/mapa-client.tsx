@@ -25,6 +25,7 @@ import {
 } from "@/app/modules/mapa-templates/map-templates.queries";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/components/ui/toast";
+import { useGlobalFair } from "../../../components/global-fair-provider";
 
 /**
  * Undo/Redo simples
@@ -411,6 +412,7 @@ function canvasElementToTemplateElement(el: MapElement) {
 export function MapaClient({ fairId }: { fairId: string }) {
   const qc = useQueryClient();
   const fairMap = useFairMapQuery(fairId);
+  const { isFinalizada } = useGlobalFair();
 
   const [tool, setTool] = React.useState<MapTool>("SELECT");
   const [isEditMode, setIsEditMode] = React.useState(true);
@@ -565,7 +567,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
    */
   const onCreateAtPoint = React.useCallback(
     (pt: { x: number; y: number }) => {
-      if (!isEditMode) return;
+      if (!isEditMode || isFinalizada) return;
 
       if (tool === "BOOTH") {
         const boothSize = boothConfigRef.current.boothSize;
@@ -783,6 +785,8 @@ export function MapaClient({ fairId }: { fairId: string }) {
       }
 
       const isCtrl = e.ctrlKey || e.metaKey;
+
+      if (isFinalizada) return;
 
       if (!isCtrl && isEditMode && toolByHotkey[e.key]) {
         e.preventDefault();
@@ -1078,6 +1082,13 @@ export function MapaClient({ fairId }: { fairId: string }) {
         isEditMode={isEditMode}
         onOpenSettings={() => setSettingsOpen(true)}
         onSave={() => {
+          if (isFinalizada) {
+            toast.error({
+              title: "Ação bloqueada",
+              subtitle: "A feira está finalizada. O mapa não pode ser salvo.",
+            });
+            return;
+          }
           if (!isEditMode) {
             toast.error({
               title: "Salvar indisponível",
@@ -1099,6 +1110,13 @@ export function MapaClient({ fairId }: { fairId: string }) {
         onPickBlueprintFile={(file) => handlePickBlueprintFile(file)}
         isEditMode={isEditMode}
         onToggleEditMode={() => {
+          if (isFinalizada) {
+            toast.error({
+               title: "Ação bloqueada",
+               subtitle: "A feira está finalizada, o modo edição está desabilitado.",
+            });
+            return;
+          }
           setIsEditMode((v) => !v);
           setTool("SELECT");
           setSelectedIds([]);

@@ -5,7 +5,7 @@
  */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { createFair, updateFair } from "./fairs.service";
+import { createFair, updateFair, finalizeFair } from "./fairs.service";
 import { CreateFairRequest, UpdateFairRequest } from "./fairs.schemas";
 
 export const fairsQueryKey = ["fairs"];
@@ -27,6 +27,17 @@ export function useUpdateFairMutation() {
   return useMutation({
     mutationFn: (args: { id: string; payload: UpdateFairRequest }) =>
       updateFair(args.id, args.payload),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: fairsQueryKey });
+    },
+  });
+}
+
+export function useFinalizeFairMutation() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => finalizeFair(id),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: fairsQueryKey });
     },

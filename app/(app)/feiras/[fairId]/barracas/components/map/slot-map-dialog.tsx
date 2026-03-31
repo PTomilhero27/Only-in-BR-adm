@@ -24,6 +24,7 @@ import {
 
 import { MapElement, MapTool } from "../../../mapa/types/types"
 import { FairMap2DCanvas } from "../../../mapa/editor/components/fair-map-2d-canvas"
+import { useGlobalFair } from "../../../components/global-fair-provider"
 
 import {
   useAvailableStallFairsQuery,
@@ -251,6 +252,7 @@ export function SlotMapDialog({
   slotClientKey: slotClientKeyFromProps,
 }: Props) {
   useBodyScrollLock(open)
+  const { isFinalizada } = useGlobalFair()
 
   // ✅ states
   const [isFullscreen, setIsFullscreen] = React.useState(false)
@@ -623,7 +625,7 @@ export function SlotMapDialog({
                           <Button
                             variant="destructive"
                             onClick={() => void handleUnlink()}
-                            disabled={linkMutation.isPending}
+                            disabled={linkMutation.isPending || isFinalizada}
                           >
                             {linkMutation.isPending ? "Desvinculando..." : "Desvincular"}
                           </Button>
@@ -684,7 +686,7 @@ export function SlotMapDialog({
                             Limpar seleção
                           </Button>
 
-                          <Button onClick={() => void handleLink()} disabled={!canSubmitLink}>
+                          <Button onClick={() => void handleLink()} disabled={!canSubmitLink || isFinalizada}>
                             {linkMutation.isPending ? "Vinculando..." : "Vincular"}
                           </Button>
                         </div>
