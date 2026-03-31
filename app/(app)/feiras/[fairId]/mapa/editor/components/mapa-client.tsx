@@ -13,6 +13,7 @@ import { MapHeader } from "./map-header";
 import { MapSettingsDialog } from "./map-settings-dialog";
 import { GenerateBoothsDialog } from "./generate-booths-dialog";
 import { BoothSlotLinkDialog } from "./booth-slot-link-dialog";
+import { MarketplaceSlotPanel } from "./marketplace-slot-panel";
 
 import {
   fairMapsQueryKeys,
@@ -27,387 +28,27 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/components/ui/toast";
 import { useGlobalFair } from "../../../components/global-fair-provider";
 
-/**
- * Undo/Redo simples
- */
-type UndoState<T> = { past: T[]; present: T; future: T[] };
+// ───────────────────────── Extracted modules ─────────────────────────
+import { useUndoRedo } from "./use-undo-redo";
+import {
+  deepClone,
+  offsetLinePoints,
+  newClientId,
+  snapInt,
+  findNextGridSpotForBooth,
+  buildBoothsInAreaRotated,
+  renumberBooths,
+  getNextBoothNumberFrom,
+  selectionIsHomogeneous,
+  toolByHotkey,
+  getErrorMessage,
+} from "./map-utils";
+import {
+  canvasElementToTemplateElement,
+  adaptTemplateElementToCanvasElement,
+} from "./map-serialization";
 
-function applySetStateAction<T>(prev: T, action: React.SetStateAction<T>): T {
-  return typeof action === "function"
-    ? (action as (prev: T) => T)(prev)
-    : action;
-}
-
-function useUndoRedo<T>(initial: T) {
-  const [state, setState] = React.useState<UndoState<T>>({
-    past: [],
-    present: initial,
-    future: [],
-  });
-
-  const set = React.useCallback((action: React.SetStateAction<T>) => {
-    setState((prev) => {
-      const next = applySetStateAction(prev.present, action);
-      if (Object.is(next, prev.present)) return prev;
-      return { past: [...prev.past, prev.present], present: next, future: [] };
-    });
-  }, []);
-
-  const undo = React.useCallback(() => {
-    setState((prev) => {
-      if (prev.past.length === 0) return prev;
-      const previous = prev.past[prev.past.length - 1];
-      return {
-        past: prev.past.slice(0, -1),
-        present: previous,
-        future: [prev.present, ...prev.future],
-      };
-    });
-  }, []);
-
-  const redo = React.useCallback(() => {
-    setState((prev) => {
-      if (prev.future.length === 0) return prev;
-      const next = prev.future[0];
-      return {
-        past: [...prev.past, prev.present],
-        present: next,
-        future: prev.future.slice(1),
-      };
-    });
-  }, []);
-
-  const reset = React.useCallback((next: T) => {
-    setState({ past: [], present: next, future: [] });
-  }, []);
-
-  return { state, set, reset, undo, redo };
-}
-
-function deepClone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function offsetLinePoints(points: number[], dx: number, dy: number) {
-  return points.map((v, idx) => (idx % 2 === 0 ? v + dx : v + dy));
-}
-
-function newClientId(prefix = "el") {
-  return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function snapInt(n: number) {
-  return Math.round(n);
-}
-
-function collidesRect(
-  a: { x: number; y: number; w: number; h: number },
-  b: { x: number; y: number; w: number; h: number },
-) {
-  return !(
-    a.x + a.w <= b.x ||
-    a.x >= b.x + b.w ||
-    a.y + a.h <= b.y ||
-    a.y >= b.y + b.h
-  );
-}
-
-/**
- * BOOTH paste "em sequência" (grid-like)
- */
-function findNextGridSpotForBooth(params: {
-  baseX: number;
-  baseY: number;
-  booths: Array<{ x: number; y: number; w: number; h: number }>;
-  boothSize: number;
-  gap: number;
-}) {
-  const { baseX, baseY, booths, boothSize, gap } = params;
-  const step = boothSize + gap;
-
-  for (let i = 1; i <= 250; i++) {
-    const x = snapInt(baseX + step * i);
-    const y = snapInt(baseY);
-    const candidate = { x, y, w: boothSize, h: boothSize };
-    const hasCollision = booths.some((b) => collidesRect(candidate, b));
-    if (!hasCollision) return { x, y };
-  }
-
-  return { x: snapInt(baseX), y: snapInt(baseY + step) };
-}
-
-type GenerateMode = "HORIZONTAL" | "VERTICAL" | "AUTO";
-
-/**
- * Esta função gera barracas (BOOTH_SLOT) dentro de uma área selecionada,
- * respeitando a rotação da área-base.
- *
- * Responsabilidade:
- * - calcular grid
- * - expandir a área se necessário
- * - posicionar cada booth no eixo rotacionado da área
- */
-function buildBoothsInAreaRotated(params: {
-  areaX: number;
-  areaY: number;
-  areaW: number;
-  areaH: number;
-  areaRotation: number;
-  qty: number;
-  boothSize: number;
-  gap: number;
-  mode: GenerateMode;
-  getNextNumber: () => number;
-  makeId: () => string;
-}) {
-  const qty = Math.max(1, Math.floor(params.qty));
-  const boothSize = Math.max(10, snapInt(params.boothSize));
-  const gap = Math.max(0, snapInt(params.gap));
-
-  let areaW = Math.max(boothSize, snapInt(params.areaW));
-  let areaH = Math.max(boothSize, snapInt(params.areaH));
-
-  let cols = 1;
-  let rows = 1;
-
-  const step = boothSize + gap;
-
-  const capacityCols = Math.max(1, Math.floor((areaW + gap) / step));
-  const capacityRows = Math.max(1, Math.floor((areaH + gap) / step));
-
-  if (params.mode === "HORIZONTAL") {
-    cols = qty;
-    rows = 1;
-  } else if (params.mode === "VERTICAL") {
-    cols = 1;
-    rows = qty;
-  } else {
-    cols = Math.min(capacityCols, qty);
-    rows = Math.ceil(qty / cols);
-  }
-
-  const requiredW = cols * boothSize + (cols - 1) * gap;
-  const requiredH = rows * boothSize + (rows - 1) * gap;
-
-  areaW = Math.max(areaW, requiredW);
-  areaH = Math.max(areaH, requiredH);
-
-  const rad = ((params.areaRotation ?? 0) * Math.PI) / 180;
-  const ux = Math.cos(rad);
-  const uy = Math.sin(rad);
-  const vx = -Math.sin(rad);
-  const vy = Math.cos(rad);
-
-  const padX = (areaW - requiredW) / 2;
-  const padY = (areaH - requiredH) / 2;
-
-  const booths: MapElement[] = [];
-
-  for (let i = 0; i < qty; i++) {
-    const r = Math.floor(i / cols);
-    const c = i % cols;
-
-    const localX = padX + c * step;
-    const localY = padY + r * step;
-
-    const x = snapInt(params.areaX + localX * ux + localY * vx);
-    const y = snapInt(params.areaY + localX * uy + localY * vy);
-
-    booths.push({
-      id: params.makeId(),
-      type: "BOOTH_SLOT",
-      x,
-      y,
-      rotation: params.areaRotation ?? 0,
-      width: boothSize,
-      height: boothSize,
-      style: {
-        fill: "#FEF9C3",
-        stroke: "#CA8A04",
-        strokeWidth: 2,
-        opacity: 0.85,
-      },
-      isLinkable: true,
-      number: params.getNextNumber(),
-    } as any);
-  }
-
-  return {
-    booths,
-    expandedArea: { w: areaW, h: areaH },
-    grid: { cols, rows, capacityCols, capacityRows },
-  };
-}
-
-/**
- * Reorganiza a numeração das barracas para manter sequência contínua 1..N.
- */
-function renumberBooths(elements: MapElement[]): MapElement[] {
-  const booths = elements
-    .filter((e) => e.type === "BOOTH_SLOT")
-    .map((e) => e as any);
-
-  if (booths.length === 0) return elements;
-
-  const sorted = [...booths].sort((a, b) => {
-    const na = typeof a.number === "number" ? a.number : Number.MAX_SAFE_INTEGER;
-    const nb = typeof b.number === "number" ? b.number : Number.MAX_SAFE_INTEGER;
-    if (na !== nb) return na - nb;
-    return String(a.id).localeCompare(String(b.id));
-  });
-
-  const nextNumberById = new Map<string, number>();
-  sorted.forEach((b, idx) => nextNumberById.set(String(b.id), idx + 1));
-
-  return elements.map((el) => {
-    if (el.type !== "BOOTH_SLOT") return el;
-    const next = nextNumberById.get(el.id);
-    if (!next) return el;
-    return { ...(el as any), number: next } as any;
-  });
-}
-
-/**
- * Calcula o próximo número disponível para uma nova barraca.
- */
-function getNextBoothNumberFrom(elements: MapElement[]) {
-  const max = elements
-    .filter((e) => e.type === "BOOTH_SLOT")
-    .reduce(
-      (acc, e: any) =>
-        Math.max(acc, typeof e.number === "number" ? e.number : 0),
-      0,
-    );
-
-  return Math.max(1, max + 1);
-}
-
-/**
- * A seleção homogênea usa o próprio `type` como chave do grupo.
- * Isso simplifica a lógica agora que RECT, SQUARE e BOOTH_SLOT
- * são tipos distintos no contrato.
- */
-function getSelectionGroupKey(el: MapElement) {
-  return el.type;
-}
-
-function selectionIsHomogeneous(elements: MapElement[], selectedIds: string[]) {
-  const selected = elements.filter((e) => selectedIds.includes(e.id));
-  if (selected.length <= 1) return true;
-  const k = getSelectionGroupKey(selected[0]);
-  return selected.every((e) => getSelectionGroupKey(e) === k);
-}
-
-/**
- * Ferramentas por hotkey (1..8)
- */
-const toolByHotkey: Record<string, MapTool> = {
-  "1": "SELECT",
-  "2": "BOOTH",
-  "3": "RECT",
-  "4": "SQUARE",
-  "5": "LINE",
-  "6": "TEXT",
-  "7": "TREE",
-  "8": "CIRCLE",
-};
-
-/**
- * Serializa o elemento do canvas para o formato esperado pela API de templates.
- * Aqui mantemos o `type` final exatamente como o backend espera.
- */
-function canvasElementToTemplateElement(el: MapElement) {
-  if (el.type === "LINE") {
-    return {
-      clientKey: el.id,
-      type: "LINE" as const,
-      x: 0,
-      y: 0,
-      rotation: el.rotation ?? 0,
-      points: (el as any).points ?? [],
-      style: normalizeStyle((el as any).style),
-    };
-  }
-
-  if (el.type === "TREE") {
-    return {
-      clientKey: el.id,
-      type: "TREE" as const,
-      x: el.x,
-      y: el.y,
-      rotation: el.rotation ?? 0,
-      radius: (el as any).radius ?? 14,
-      label: (el as any).label ?? null,
-      style: normalizeStyle((el as any).style),
-    };
-  }
-
-  if (el.type === "CIRCLE") {
-    return {
-      clientKey: el.id,
-      type: "CIRCLE" as const,
-      x: el.x,
-      y: el.y,
-      rotation: el.rotation ?? 0,
-      radius: Number((el as any).radius ?? 45),
-      label: (el as any).label ?? null,
-      style: normalizeStyle((el as any).style),
-      isLinkable: false,
-    };
-  }
-
-  if (el.type === "TEXT") {
-    const baseStyle = normalizeStyle((el as any).style);
-    const text = String((el as any).text ?? "").trim() || "Texto";
-    const fontSize = Number((el as any).fontSize ?? 18);
-    const boxed = Boolean((el as any).boxed ?? true);
-    const padding = Number((el as any).padding ?? 10);
-    const borderRadius = Number((el as any).borderRadius ?? 10);
-
-    return {
-      clientKey: el.id,
-      type: "TEXT" as const,
-      x: el.x,
-      y: el.y,
-      rotation: el.rotation ?? 0,
-      label: text,
-      style: {
-        ...baseStyle,
-        fontSize,
-        boxed,
-        padding,
-        borderRadius,
-      } as any,
-      isLinkable: false,
-    };
-  }
-
-  if (el.type === "RECT" || el.type === "SQUARE" || el.type === "BOOTH_SLOT") {
-    const isBooth = el.type === "BOOTH_SLOT";
-
-    return {
-      clientKey: el.id,
-      type: el.type,
-      x: el.x ?? 0,
-      y: el.y ?? 0,
-      rotation: el.rotation ?? 0,
-      width: Number((el as any).width ?? 60),
-      height: Number((el as any).height ?? 60),
-      label: isBooth ? null : ((el as any).label ?? "Área"),
-      number: isBooth ? ((el as any).number ?? null) : null,
-      isLinkable: isBooth ? Boolean((el as any).isLinkable ?? true) : false,
-      style: normalizeStyle((el as any).style),
-    };
-  }
-
-  /**
-   * Este ponto só existe para segurança de tipagem.
-   * Se um novo tipo for adicionado em MapElement e não for tratado aqui,
-   * o TypeScript vai acusar erro.
-   */
-  const _exhaustiveCheck: never = el;
-  throw new Error(`Tipo de elemento não suportado: ${JSON.stringify(_exhaustiveCheck)}`);
-}
+// ───────────────────────── Component ─────────────────────────
 
 export function MapaClient({ fairId }: { fairId: string }) {
   const qc = useQueryClient();
@@ -435,6 +76,10 @@ export function MapaClient({ fairId }: { fairId: string }) {
   const [activeSlotClientKey, setActiveSlotClientKey] = React.useState<string | null>(
     null,
   );
+
+  // Marketplace panel
+  const [marketplacePanelOpen, setMarketplacePanelOpen] = React.useState(false);
+  const [activeMarketplaceSlotId, setActiveMarketplaceSlotId] = React.useState<string | null>(null);
 
   const isNotConfigured =
     (fairMap.error as any)?.statusCode === 404 ||
@@ -468,6 +113,28 @@ export function MapaClient({ fairId }: { fairId: string }) {
     return linkBySlotClientKey.get(activeSlotClientKey) ?? null;
   }, [activeSlotClientKey, linkBySlotClientKey]);
 
+  // ───────────────────────── Marketplace slot status map ─────────────────────────
+
+  const slotStatusMap = React.useMemo(() => {
+    const slots = (fairMap.data as any)?.slots ?? [];
+    const map = new Map<string, { commercialStatus: string; priceCents: number }>();
+    for (const s of slots) {
+      if (s?.fairMapElementId) {
+        map.set(String(s.fairMapElementId), {
+          commercialStatus: s.commercialStatus ?? "AVAILABLE",
+          priceCents: s.priceCents ?? 0,
+        });
+      }
+    }
+    return map;
+  }, [fairMap.data]);
+
+  const activeMarketplaceSlot = React.useMemo(() => {
+    if (!activeMarketplaceSlotId) return null;
+    const slots = (fairMap.data as any)?.slots ?? [];
+    return slots.find((s: any) => s.id === activeMarketplaceSlotId) ?? null;
+  }, [activeMarketplaceSlotId, fairMap.data]);
+
   const templateElements = fairMap.data?.template?.elements ?? [];
 
   const initialElements = React.useMemo<MapElement[]>(() => {
@@ -482,12 +149,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
     React.Dispatch<React.SetStateAction<MapElement[]>>
   >((action) => elementsState.set(action), [elementsState]);
 
-  /**
-   * Em vez de resetar por JSON.stringify(initialElements), resetamos apenas
-   * quando a identidade da versão remota muda.
-   *
-   * Isso evita sobrescrever alterações locais por renders intermediários.
-   */
   const serverTemplateIdentity = React.useMemo(() => {
     const tpl = fairMap.data?.template;
     if (!tpl) return "no-template";
@@ -547,10 +208,6 @@ export function MapaClient({ fairId }: { fairId: string }) {
     setViewportToken((v) => v + 1);
   }
 
-  /**
-   * Helper central para atualizar 1 elemento por id.
-   * Isso evita repetir map/replace em vários pontos do componente.
-   */
   const updateElementById = React.useCallback(
     (elementId: string, next: MapElement) => {
       setElements((prev) => prev.map((e) => (e.id === elementId ? next : e)));
@@ -558,13 +215,8 @@ export function MapaClient({ fairId }: { fairId: string }) {
     [setElements],
   );
 
-  /**
-   * Cria um novo elemento no mapa a partir da ferramenta selecionada.
-   * Aqui já usamos o contrato novo do editor:
-   * - BOOTH -> BOOTH_SLOT
-   * - RECT -> RECT
-   * - SQUARE -> SQUARE
-   */
+  // ───────────────────────── Create at point ─────────────────────────
+
   const onCreateAtPoint = React.useCallback(
     (pt: { x: number; y: number }) => {
       if (!isEditMode || isFinalizada) return;
@@ -609,12 +261,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
           rotation: 0,
           width: 140,
           height: 90,
-          style: {
-            fill: "#E2E8F0",
-            stroke: "#0F172A",
-            strokeWidth: 2,
-            opacity: 0.75,
-          },
+          style: { fill: "#E2E8F0", stroke: "#0F172A", strokeWidth: 2, opacity: 0.75 },
           label: "Área",
         } as any;
 
@@ -632,12 +279,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
           rotation: 0,
           width: 90,
           height: 90,
-          style: {
-            fill: "#E2E8F0",
-            stroke: "#0F172A",
-            strokeWidth: 2,
-            opacity: 0.75,
-          },
+          style: { fill: "#E2E8F0", stroke: "#0F172A", strokeWidth: 2, opacity: 0.75 },
           label: "Área",
         } as any;
 
@@ -654,12 +296,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
           y: snapInt(pt.y),
           rotation: 0,
           radius: 45,
-          style: {
-            fill: "#E2E8F0",
-            stroke: "#0F172A",
-            strokeWidth: 2,
-            opacity: 0.75,
-          },
+          style: { fill: "#E2E8F0", stroke: "#0F172A", strokeWidth: 2, opacity: 0.75 },
         } as any;
 
         setElements((prev) => [...prev, circle]);
@@ -674,12 +311,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
           x: snapInt(pt.x),
           y: snapInt(pt.y),
           rotation: 0,
-          style: {
-            fill: "#0F172A",
-            stroke: "#0F172A",
-            strokeWidth: 2,
-            opacity: 1,
-          },
+          style: { fill: "#0F172A", stroke: "#0F172A", strokeWidth: 2, opacity: 1 },
           text: "Texto",
           fontSize: 18,
           boxed: true,
@@ -699,12 +331,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
           x: snapInt(pt.x),
           y: snapInt(pt.y),
           rotation: 0,
-          style: {
-            fill: "#BBF7D0",
-            stroke: "#16A34A",
-            strokeWidth: 2,
-            opacity: 1,
-          },
+          style: { fill: "#BBF7D0", stroke: "#16A34A", strokeWidth: 2, opacity: 1 },
           radius: 18,
         } as any;
 
@@ -714,6 +341,8 @@ export function MapaClient({ fairId }: { fairId: string }) {
     },
     [isEditMode, setElements, tool],
   );
+
+  // ───────────────────────── Copy / Paste / Line / Keyboard ─────────────────────────
 
   const copyRef = React.useRef<MapElement | null>(null);
 
@@ -744,12 +373,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
           x: 0,
           y: 0,
           rotation: 0,
-          style: {
-            fill: "#000000",
-            stroke: "#0F172A",
-            strokeWidth: 3,
-            opacity: 0.9,
-          },
+          style: { fill: "#000000", stroke: "#0F172A", strokeWidth: 3, opacity: 0.9 },
           points: pts,
         } as any;
 
@@ -772,6 +396,8 @@ export function MapaClient({ fairId }: { fairId: string }) {
     );
     setSelectedIds([]);
   }, [selectedIds, setElements]);
+
+  // ───────────────────────── Keyboard Handler ─────────────────────────
 
   React.useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -807,25 +433,10 @@ export function MapaClient({ fairId }: { fairId: string }) {
       }
 
       if (lineDraft.active) {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          cancelLineDraft();
-          return;
-        }
-        if (e.key === "Enter") {
-          e.preventDefault();
-          finishLineDraft();
-          return;
-        }
-        if (e.key === "Backspace") {
-          e.preventDefault();
-          removeLastLinePoint();
-          return;
-        }
-        if (e.key === "Delete") {
-          e.preventDefault();
-          return;
-        }
+        if (e.key === "Escape") { e.preventDefault(); cancelLineDraft(); return; }
+        if (e.key === "Enter") { e.preventDefault(); finishLineDraft(); return; }
+        if (e.key === "Backspace") { e.preventDefault(); removeLastLinePoint(); return; }
+        if (e.key === "Delete") { e.preventDefault(); return; }
       }
 
       if ((e.key === "Delete" || e.key === "Backspace") && isEditMode) {
@@ -911,8 +522,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
         if (!selected || !(selected.type === "RECT" || selected.type === "SQUARE")) {
           toast.error({
             title: "Ação indisponível",
-            subtitle:
-              "Selecione um Retângulo/Quadrado (área) para gerar as barracas.",
+            subtitle: "Selecione um Retângulo/Quadrado (área) para gerar as barracas.",
           });
           return;
         }
@@ -938,6 +548,8 @@ export function MapaClient({ fairId }: { fairId: string }) {
     setElements,
   ]);
 
+  // ───────────────────────── Operational booth click ─────────────────────────
+
   const handleOperationalBoothClick = React.useCallback(
     (slotIdOrClientKey: string) => {
       if (isEditMode) return;
@@ -945,30 +557,39 @@ export function MapaClient({ fairId }: { fairId: string }) {
       const el = elements.find((e) => e.id === slotIdOrClientKey);
       const resolved = (el as any)?.clientKey ?? slotIdOrClientKey;
 
-      setActiveSlotClientKey(String(resolved));
-      setLinkDialogOpen(true);
+      // Tenta encontrar um FairMapSlot com este fairMapElementId
+      const slots = (fairMap.data as any)?.slots ?? [];
+      const matchingSlot = slots.find(
+        (s: any) => s.fairMapElementId === resolved || s.fairMapElementId === slotIdOrClientKey,
+      );
+
+      if (matchingSlot) {
+        // Abre painel marketplace
+        setActiveMarketplaceSlotId(matchingSlot.id);
+        setMarketplacePanelOpen(true);
+      } else {
+        // Fallback: abre link dialog antigo
+        setActiveSlotClientKey(String(resolved));
+        setLinkDialogOpen(true);
+      }
     },
-    [isEditMode, elements],
+    [isEditMode, elements, fairMap.data],
   );
+
+  // ───────────────────────── Save ─────────────────────────
 
   const templateId = (fairMap.data as any)?.template?.id as string | undefined;
   const updateTemplate = useUpdateMapTemplateMutation(templateId ?? "");
 
   const handleSaveTemplate = React.useCallback(async () => {
     if (!templateId) {
-      toast.error({
-        title: "Não foi possível salvar",
-        subtitle: "Template não carregado (templateId ausente).",
-      });
+      toast.error({ title: "Não foi possível salvar", subtitle: "Template não carregado (templateId ausente)." });
       return;
     }
 
     const tpl = (fairMap.data as any)?.template;
     if (!tpl) {
-      toast.error({
-        title: "Não foi possível salvar",
-        subtitle: "Template não carregado.",
-      });
+      toast.error({ title: "Não foi possível salvar", subtitle: "Template não carregado." });
       return;
     }
 
@@ -987,25 +608,15 @@ export function MapaClient({ fairId }: { fairId: string }) {
 
       await updateTemplate.mutateAsync(payload as any);
 
-      /**
-       * Mantemos o estado local alinhado com o que acabou de ser salvo.
-       * Isso evita sensação de “voltou pro estado antigo” antes do refetch.
-       */
       elementsState.reset(normalized);
       lastAppliedServerIdentityRef.current = serverTemplateIdentity;
 
       await qc.invalidateQueries({ queryKey: mapTemplatesKeys.byId(templateId) });
       await qc.invalidateQueries({ queryKey: fairMapsQueryKeys.byFairId(fairId) });
 
-      toast.success({
-        title: "Mapa salvo",
-        subtitle: "Template atualizado com sucesso.",
-      });
+      toast.success({ title: "Mapa salvo", subtitle: "Template atualizado com sucesso." });
     } catch (err) {
-      toast.error({
-        title: "Erro ao salvar",
-        subtitle: getErrorMessage(err),
-      });
+      toast.error({ title: "Erro ao salvar", subtitle: getErrorMessage(err) });
     }
   }, [
     elements,
@@ -1017,6 +628,8 @@ export function MapaClient({ fairId }: { fairId: string }) {
     templateId,
     updateTemplate,
   ]);
+
+  // ───────────────────────── Loading / Error states ─────────────────────────
 
   if (fairMap.isLoading) {
     return (
@@ -1058,6 +671,8 @@ export function MapaClient({ fairId }: { fairId: string }) {
     );
   }
 
+  // ───────────────────────── Render ─────────────────────────
+
   const gridCols = isEditMode
     ? "lg:grid-cols-[280px_1fr_360px]"
     : "lg:grid-cols-[0px_1fr_0px]";
@@ -1083,17 +698,11 @@ export function MapaClient({ fairId }: { fairId: string }) {
         onOpenSettings={() => setSettingsOpen(true)}
         onSave={() => {
           if (isFinalizada) {
-            toast.error({
-              title: "Ação bloqueada",
-              subtitle: "A feira está finalizada. O mapa não pode ser salvo.",
-            });
+            toast.error({ title: "Ação bloqueada", subtitle: "A feira está finalizada. O mapa não pode ser salvo." });
             return;
           }
           if (!isEditMode) {
-            toast.error({
-              title: "Salvar indisponível",
-              subtitle: "Ative o modo edição para salvar alterações do template.",
-            });
+            toast.error({ title: "Salvar indisponível", subtitle: "Ative o modo edição para salvar alterações do template." });
             return;
           }
           if (isSaving) return;
@@ -1111,10 +720,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
         isEditMode={isEditMode}
         onToggleEditMode={() => {
           if (isFinalizada) {
-            toast.error({
-               title: "Ação bloqueada",
-               subtitle: "A feira está finalizada, o modo edição está desabilitado.",
-            });
+            toast.error({ title: "Ação bloqueada", subtitle: "A feira está finalizada, o modo edição está desabilitado." });
             return;
           }
           setIsEditMode((v) => !v);
@@ -1140,10 +746,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
           }
 
           const qtyN = Math.max(1, Math.floor(Number(qty) || 1));
-          const sizeN = Math.max(
-            10,
-            Math.round(Number(boothSize) || boothConfig.boothSize),
-          );
+          const sizeN = Math.max(10, Math.round(Number(boothSize) || boothConfig.boothSize));
           const gapN = Math.max(0, Math.round(Number(gap) || boothConfig.gap));
 
           setBoothConfig({ boothSize: sizeN, gap: gapN });
@@ -1193,6 +796,25 @@ export function MapaClient({ fairId }: { fairId: string }) {
         linked={activeLink}
       />
 
+      <MarketplaceSlotPanel
+        open={marketplacePanelOpen}
+        onOpenChange={(open) => {
+          setMarketplacePanelOpen(open);
+          if (!open) setActiveMarketplaceSlotId(null);
+        }}
+        fairId={fairId}
+        slotInfo={activeMarketplaceSlot}
+        boothNumber={
+          activeMarketplaceSlot
+            ? (elements.find(
+                (e) =>
+                  (e as any).clientKey === activeMarketplaceSlot.fairMapElementId ||
+                  e.id === activeMarketplaceSlot.fairMapElementId,
+              ) as any)?.number ?? null
+            : null
+        }
+      />
+
       <div
         className={`grid flex-1 grid-cols-1 gap-3 ${gridCols} transition-[grid-template-columns] duration-300`}
       >
@@ -1223,6 +845,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
             onLineDraftChange={setLineDraft}
             onFinishLineDraft={finishLineDraft}
             linkedBoothIds={linkedBoothIds}
+            slotStatusMap={slotStatusMap}
             enableOperationalBoothClick={!isEditMode}
             onBoothClick={handleOperationalBoothClick}
           />
@@ -1245,167 +868,4 @@ export function MapaClient({ fairId }: { fairId: string }) {
       </div>
     </div>
   );
-}
-
-/**
- * Adapter: backend element -> canvas element
- *
- * Esta função converte o payload da API para o formato interno do canvas,
- * preservando o `type` real de cada elemento.
- *
- * Decisão importante:
- * - id no canvas = clientKey do backend
- * - assim mantemos estabilidade entre edição, save e reload
- */
-function adaptTemplateElementToCanvasElement(el: MapTemplateElement): MapElement {
-  const style = normalizeStyle((el as any).style);
-  const clientKey = (el as any).clientKey ?? (el as any).id;
-
-  if ((el as any).type === "LINE") {
-    return {
-      id: clientKey,
-      clientKey,
-      type: "LINE",
-      x: 0,
-      y: 0,
-      rotation: (el as any).rotation ?? 0,
-      style,
-      points: ((el as any).points ?? []) as number[],
-    } as any;
-  }
-
-  if ((el as any).type === "TEXT") {
-    const text =
-      String((el as any).text ?? (el as any).label ?? "").trim() || "Texto";
-    const fontSize = Number(
-      (el as any).fontSize ?? (el as any)?.style?.fontSize ?? 18,
-    );
-
-    return {
-      id: clientKey,
-      clientKey,
-      type: "TEXT",
-      x: (el as any).x ?? 0,
-      y: (el as any).y ?? 0,
-      rotation: (el as any).rotation ?? 0,
-      style,
-      text,
-      fontSize,
-      boxed: Boolean((el as any).boxed ?? (el as any)?.style?.boxed ?? true),
-      padding: Number((el as any).padding ?? (el as any)?.style?.padding ?? 10),
-      borderRadius: Number(
-        (el as any).borderRadius ?? (el as any)?.style?.borderRadius ?? 10,
-      ),
-    } as any;
-  }
-
-  if ((el as any).type === "TREE") {
-    return {
-      id: clientKey,
-      clientKey,
-      type: "TREE",
-      x: (el as any).x ?? 0,
-      y: (el as any).y ?? 0,
-      rotation: (el as any).rotation ?? 0,
-      style,
-      radius: Number((el as any).radius ?? 14),
-      label: (el as any).label ?? undefined,
-    } as any;
-  }
-
-  if ((el as any).type === "CIRCLE") {
-    return {
-      id: clientKey,
-      clientKey,
-      type: "CIRCLE",
-      x: (el as any).x ?? 0,
-      y: (el as any).y ?? 0,
-      rotation: (el as any).rotation ?? 0,
-      style,
-      radius: Number((el as any).radius ?? 45),
-      label: (el as any).label ?? undefined,
-    } as any;
-  }
-
-  if ((el as any).type === "BOOTH_SLOT") {
-    return {
-      id: clientKey,
-      clientKey,
-      type: "BOOTH_SLOT",
-      x: Number((el as any).x ?? 0),
-      y: Number((el as any).y ?? 0),
-      rotation: Number((el as any).rotation ?? 0),
-      style,
-      width: Number((el as any).width ?? 60),
-      height: Number((el as any).height ?? 60),
-      isLinkable: Boolean((el as any).isLinkable ?? true),
-      number: (el as any).number ?? undefined,
-      label: undefined,
-    } as any;
-  }
-
-  if ((el as any).type === "SQUARE") {
-    return {
-      id: clientKey,
-      clientKey,
-      type: "SQUARE",
-      x: Number((el as any).x ?? 0),
-      y: Number((el as any).y ?? 0),
-      rotation: Number((el as any).rotation ?? 0),
-      style,
-      width: Number((el as any).width ?? 60),
-      height: Number((el as any).height ?? 60),
-      label: (el as any).label ?? "",
-    } as any;
-  }
-
-  return {
-    id: clientKey,
-    clientKey,
-    type: "RECT",
-    x: Number((el as any).x ?? 0),
-    y: Number((el as any).y ?? 0),
-    rotation: Number((el as any).rotation ?? 0),
-    style,
-    width: Number((el as any).width ?? 60),
-    height: Number((el as any).height ?? 60),
-    label: (el as any).label ?? "",
-  } as any;
-}
-
-function normalizeStyle(style: unknown) {
-  const fallback = {
-    fill: "#CBD5E1",
-    stroke: "#0F172A",
-    strokeWidth: 2,
-    opacity: 0.65,
-  };
-
-  if (!style || typeof style !== "object") return fallback;
-
-  const s = style as any;
-  return {
-    fill: typeof s.fill === "string" ? s.fill : fallback.fill,
-    stroke: typeof s.stroke === "string" ? s.stroke : fallback.stroke,
-    strokeWidth:
-      typeof s.strokeWidth === "number" ? s.strokeWidth : fallback.strokeWidth,
-    opacity: typeof s.opacity === "number" ? s.opacity : fallback.opacity,
-  };
-}
-
-function getErrorMessage(err: unknown) {
-  if (!err) return "Erro inesperado.";
-  if (typeof err === "string") return err;
-
-  if (typeof err === "object" && err !== null) {
-    const anyErr = err as any;
-    return (
-      anyErr?.message ??
-      anyErr?.response?.message ??
-      anyErr?.response?.error ??
-      "Erro inesperado."
-    );
-  }
-
-  return "Erro inesperado.";
 }

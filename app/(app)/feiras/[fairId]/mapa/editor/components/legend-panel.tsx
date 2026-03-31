@@ -1,8 +1,7 @@
 "use client";
 
-// src/modules/fair-map-2d/components/legend-panel.tsx
 /**
- * Legenda do mapa (ajuda muito na montagem e leitura rápida).
+ * Legenda do mapa — atualizada com status do Marketplace.
  */
 
 export function LegendPanel() {
@@ -11,19 +10,31 @@ export function LegendPanel() {
       <h2 className="text-sm font-medium">Legenda</h2>
 
       <div className="mt-3 space-y-2 text-sm">
-        <Item color="bg-slate-300" label="Livre" />
-        <Item color="bg-green-500" label="Vinculada" />
-        <Item color="bg-red-500" label="Bloqueada" />
-        <Item color="bg-yellow-500" label="Atenção" />
+        <Item color="bg-yellow-200" strokeColor="border-yellow-600" label="Disponível" />
+        <Item color="bg-blue-100" strokeColor="border-blue-600" label="Reservado" />
+        <Item color="bg-green-200" strokeColor="border-green-600" label="Confirmado" />
+        <Item color="bg-red-100" strokeColor="border-red-600" label="Bloqueado" />
+      </div>
+
+      <div className="mt-3 border-t pt-2 space-y-2 text-sm">
+        <Item color="bg-slate-200" strokeColor="border-slate-500" label="Sem slot comercial" />
       </div>
     </div>
   );
 }
 
-function Item({ color, label }: { color: string; label: string }) {
+function Item({
+  color,
+  strokeColor,
+  label,
+}: {
+  color: string;
+  strokeColor: string;
+  label: string;
+}) {
   return (
     <div className="flex items-center gap-2">
-      <div className={`h-3 w-3 rounded ${color}`} />
+      <div className={`h-3.5 w-3.5 rounded border ${color} ${strokeColor}`} />
       <span className="text-muted-foreground">{label}</span>
     </div>
   );

@@ -100,6 +100,24 @@ export type FairMapBoothLink = z.infer<
 >;
 
 /**
+ * FairMapSlot — slot comercial (marketplace) retornado junto com o mapa
+ */
+export const fairMapSlotSchema = z
+  .object({
+    id: z.string(),
+    fairMapElementId: z.string(),
+    code: z.string().nullable().optional(),
+    label: z.string().nullable().optional(),
+    priceCents: z.number(),
+    commercialStatus: z.enum(["AVAILABLE", "RESERVED", "CONFIRMED", "BLOCKED"]),
+    isPublic: z.boolean(),
+    notes: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+export type FairMapSlot = z.infer<typeof fairMapSlotSchema>;
+
+/**
  * ✅ NOVA resposta real do backend
  * GET /fairs/:fairId/map
  */
@@ -109,6 +127,7 @@ export const getFairMapResponseSchema = z
     fairMapId: z.string(),
     template: fairMapTemplateSchema,
     links: z.array(fairMapBoothLinkSchema),
+    slots: z.array(fairMapSlotSchema).optional().default([]),
   })
   .passthrough();
 

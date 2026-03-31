@@ -34,6 +34,8 @@ import {
 import { useCreateMagicLinkMutation } from "@/app/modules/fair-maps/magic-link.queries"
 import { useUpdateMapTemplateMutation } from "@/app/modules/mapa-templates/map-templates.queries"
 import type { MapTemplateElement } from "@/app/modules/mapa-templates/map-templates.schema"
+import { adaptTemplateElementToCanvasElement } from "../../../mapa/editor/components/map-serialization"
+
 
 type Props = {
   open: boolean
@@ -148,87 +150,11 @@ function snapInt(n: number) {
   return Math.round(n)
 }
 
-function normalizeStyle(style: unknown) {
-  const fallback = { fill: "#CBD5E1", stroke: "#0F172A", strokeWidth: 2, opacity: 0.65 }
-  if (!style || typeof style !== "object") return fallback
-  const s = style as any
-  return {
-    fill: typeof s.fill === "string" ? s.fill : fallback.fill,
-    stroke: typeof s.stroke === "string" ? s.stroke : fallback.stroke,
-    strokeWidth: typeof s.strokeWidth === "number" ? s.strokeWidth : fallback.strokeWidth,
-    opacity: typeof s.opacity === "number" ? s.opacity : fallback.opacity,
-  }
-}
-
-function adaptTemplateElementToCanvasElement(el: MapTemplateElement): MapElement {
-  const style = normalizeStyle((el as any).style)
-  const clientKey = (el as any).clientKey ?? (el as any).id
-  const t = String((el as any).type ?? "RECT")
-
-  if (t === "LINE") {
-    return {
-      id: clientKey,
-      type: "LINE",
-      x: 0,
-      y: 0,
-      rotation: (el as any).rotation ?? 0,
-      style,
-      points: ((el as any).points ?? []) as number[],
-    } as any
-  }
-
-  if (t === "TEXT") {
-    const text = (el as any).text ?? (el as any).label ?? "Texto"
-    const fontSize = (el as any).fontSize ?? (el as any)?.style?.fontSize ?? 18
-    return {
-      id: clientKey,
-      type: "TEXT",
-      x: (el as any).x ?? 0,
-      y: (el as any).y ?? 0,
-      rotation: (el as any).rotation ?? 0,
-      style,
-      text,
-      fontSize,
-      boxed: (el as any).boxed ?? (el as any)?.style?.boxed ?? true,
-      padding: (el as any).padding ?? (el as any)?.style?.padding ?? 10,
-      borderRadius: (el as any).borderRadius ?? (el as any)?.style?.borderRadius ?? 10,
-    } as any
-  }
-
-  if (t === "TREE") {
-    return {
-      id: clientKey,
-      type: "TREE",
-      x: (el as any).x ?? 0,
-      y: (el as any).y ?? 0,
-      rotation: (el as any).rotation ?? 0,
-      style,
-      radius: ((el as any).radius ?? 14) as number,
-      label: (el as any).label ?? undefined,
-    } as any
-  }
-
-  const rectKind = t === "BOOTH_SLOT" ? "BOOTH" : t === "SQUARE" ? "SQUARE" : "RECT"
-
-  return {
-    id: clientKey,
-    type: "RECT",
-    rectKind,
-    x: (el as any).x ?? 0,
-    y: (el as any).y ?? 0,
-    rotation: (el as any).rotation ?? 0,
-    style,
-    width: ((el as any).width ?? 60) as number,
-    height: ((el as any).height ?? 60) as number,
-    isLinkable: rectKind === "BOOTH",
-    number: rectKind === "BOOTH" ? ((el as any).number ?? undefined) : undefined,
-    label: rectKind !== "BOOTH" ? ((el as any).label ?? "") : undefined,
-  } as any
-}
+// Removed adaptTemplateElementToCanvasElement and normalizeStyle
 
 function getNextBoothNumberFrom(elements: MapElement[]) {
   const max = elements
-    .filter((e) => e.type === "RECT" && (e as any).rectKind === "BOOTH")
+    .filter((e) => e.type === "BOOTH_SLOT")
     .reduce((acc, e: any) => Math.max(acc, typeof e.number === "number" ? e.number : 0), 0)
   return Math.max(1, max + 1)
 }
@@ -242,6 +168,8 @@ function getErrorMessage(err: unknown) {
   }
   return "Erro inesperado."
 }
+
+const EMPTY_ARRAY: any[] = []
 
 export function SlotMapDialog({
   open,
@@ -281,7 +209,7 @@ export function SlotMapDialog({
   const backgroundUrl = (fairMap.data as any)?.template?.backgroundUrl ?? undefined
 
   // ✅ init elements
-  const templateElements = fairMap.data?.template?.elements ?? []
+  const templateElements = fairMap.data?.template?.elements ?? EMPTY_ARRAY
   const initialElements = React.useMemo<MapElement[]>(() => {
     const raw = templateElements as MapTemplateElement[]
     return raw.map((el) => adaptTemplateElementToCanvasElement(el))
@@ -314,7 +242,7 @@ export function SlotMapDialog({
     // 2) pelo número do slot (booth.number)
     if (typeof slotNumberFromProps === "number") {
       const found = initialElements.find(
-        (e) => e.type === "RECT" && (e as any).rectKind === "BOOTH" && (e as any).number === slotNumberFromProps,
+        (e) => e.type === "BOOTH_SLOT" && (e as any).number === slotNumberFromProps,
       )
       if (found) {
         setSelectedIds([found.id])
@@ -328,7 +256,7 @@ export function SlotMapDialog({
     return elements.find((e) => e.id === selectedIds[0]) ?? null
   }, [elements, selectedIds])
 
-  const selectedSlotIsBooth = selected?.type === "RECT" && (selected as any).rectKind === "BOOTH"
+  const selectedSlotIsBooth = selected?.type === "BOOTH_SLOT"
   const slotClientKey = selectedSlotIsBooth ? selected!.id : null
   const slotNumber = selectedSlotIsBooth ? ((selected as any).number ?? null) : null
   const hasSelectedSlot = Boolean(slotClientKey)
@@ -414,8 +342,7 @@ export function SlotMapDialog({
         const nextNumber = getNextBoothNumberFrom(prev)
         const booth: MapElement = {
           id: newClientId("booth"),
-          type: "RECT",
-          rectKind: "BOOTH",
+          type: "BOOTH_SLOT",
           x: snapInt(pt.x),
           y: snapInt(pt.y),
           rotation: 0,

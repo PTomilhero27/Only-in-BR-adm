@@ -417,6 +417,7 @@ export const MapElementTypeSchema = z.enum([
   "LINE",
   "TEXT",
   "TREE",
+  "CIRCLE",
 ])
 export type MapElementType = z.infer<typeof MapElementTypeSchema>
 
