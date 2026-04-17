@@ -1,0 +1,17 @@
+
+> feira-gastronomica-front@0.1.0 dev
+> next dev --port 3000
+
+[32m✔[0m [33mConsole Ninja[0m extension is connected to [33mNext.js[0m, see [36mhttps://tinyurl.com/2vt8jxzw[0m
+⚠ Console Ninja Turbopack support is a PRO feature, [33mcurrently available to community users while in preview[0m
+▲ Next.js 16.1.1 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.10.10:3000
+- Environments: .env
+
+✓ Starting...
+Creating turbopack project {
+  dir: 'C:\\Users\\ptomi\\Desktop\\Programacao\\Feira gastronomica\\Only-in-BR-adm',
+  testMode: true
+}
+✓ Ready in 6.7s

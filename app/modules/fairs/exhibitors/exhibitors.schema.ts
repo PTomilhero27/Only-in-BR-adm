@@ -124,6 +124,8 @@ export type AppliedTaxSnapshot = z.infer<typeof AppliedTaxSnapshotSchema>
 export const MapSlotSchema = z.object({
   clientKey: z.string(),
   number: z.number().int().nullable().optional(), // ✅ robustez (pode vir omitido)
+  commercialStatus: z.enum(["AVAILABLE", "RESERVED", "CONFIRMED", "BLOCKED"]).nullable().optional(),
+  priceCents: z.number().int().nullable().optional(),
 })
 export type MapSlot = z.infer<typeof MapSlotSchema>
 

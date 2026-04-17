@@ -1,419 +1,204 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { cn } from "@/lib/utils"
-import type { OwnerFairStatus } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
-import {
-  Layers3,
-  Users,
-  CheckCircle2,
-  Store,
-  ChevronDown,
-  HandCoins,
-} from "lucide-react"
-import { OwnerFairStatusCountBadge } from "./table/owner-fair-status-badges"
+import { CheckCircle2, HandCoins, Layers3, Store, Users } from "lucide-react";
 
-/**
- * Cards de KPI do dashboard de barracas.
- * Responsabilidade:
- * - Mostrar uma visão rápida e fácil de entender (sem excesso de texto)
- * - Consolidar indicadores de capacidade, status, conclusão e financeiro
- *
- * Decisões:
- * - Mantemos layout de "cards accordion" para reduzir ruído visual
- * - O estado de abrir/fechar é global (abrir 1 abre todos / fechar 1 fecha todos)
- * - Valores financeiros são recebidos já agregados em cents (inteiros), evitando problemas de float
- *
- * Ajustes desta iteração (UI):
- * - Grid em 3 colunas (fica menos largo e mais equilibrado)
- * - Cards com altura mínima controlada (evita “esticado”)
- * - Espaçamentos internos reduzidos (mais compacto e menos “vazio”)
- * - Financeiro com hero menor + rows mais compactas
- */
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import type { OwnerFairStatus } from "@/app/modules/fairs/exhibitors/exhibitors.schema";
+import { OwnerFairStatusCountBadge } from "./table/owner-fair-status-badges";
+
 export function StallsKpiCards({
   kpis,
 }: {
   kpis: {
-    purchased: number
-    linked: number
-    stallsCapacity?: number | null
-
-    exhibitors: number
-    exhibitorsLimit?: number | null
-
-    doneExhibitors: number
-    statusCounts: Record<OwnerFairStatus, number>
-
-    // ✅ financeiro
-    totalSoldCents: number
-    totalPaidCents: number
-    totalOpenCents: number
-    overdueOpenCents: number
-  }
+    purchased: number;
+    linked: number;
+    stallsCapacity?: number | null;
+    exhibitors: number;
+    exhibitorsLimit?: number | null;
+    doneExhibitors: number;
+    statusCounts: Record<OwnerFairStatus, number>;
+    totalSoldCents: number;
+    totalPaidCents: number;
+    totalOpenCents: number;
+    overdueOpenCents: number;
+  };
 }) {
-  const stallsCap = kpis.stallsCapacity ?? null
-  const exhibitorsCap = kpis.exhibitorsLimit ?? null
-
-  const stallsLabel = stallsCap ? `${kpis.linked}/${stallsCap}` : `${kpis.linked}`
-  const exhibitorsLabel = exhibitorsCap
-    ? `${kpis.exhibitors}/${exhibitorsCap}`
-    : `${kpis.exhibitors}`
-
+  const stallsCap = kpis.stallsCapacity ?? null;
   const donePct =
-    kpis.exhibitors > 0 ? Math.min(1, kpis.doneExhibitors / kpis.exhibitors) : 0
-  const donePctLabel = kpis.exhibitors > 0 ? `${Math.round(donePct * 100)}%` : "—"
-
-  /**
-   * Estado global do "accordion".
-   * Regra: se fechar 1, fecha todos. Se abrir 1, abre todos.
-   */
-  const [openAll, setOpenAll] = useState(true)
-
-  // ✅ Financeiro (em cents)
-  const soldCents = kpis.totalSoldCents ?? 0
-  const paidCents = kpis.totalPaidCents ?? 0
-  const openCents = kpis.totalOpenCents ?? Math.max(0, soldCents - paidCents)
-  const overdueCents = kpis.overdueOpenCents ?? 0
-
-  const paidPct = soldCents > 0 ? Math.min(1, paidCents / soldCents) : 0
-  const paidPctLabel = soldCents > 0 ? `${Math.round(paidPct * 100)}%` : "—"
+    kpis.exhibitors > 0 ? Math.min(1, kpis.doneExhibitors / kpis.exhibitors) : 0;
+  const paidPct =
+    kpis.totalSoldCents > 0 ? Math.min(1, kpis.totalPaidCents / kpis.totalSoldCents) : 0;
 
   return (
-    // ✅ 3 colunas em telas grandes (menos largo / mais equilibrado)
-    <div className="grid gap-4 lg:grid-cols-4">
-      {/* 1) Capacidade */}
-      <AccordionKpiCard
-        accent="blue"
-        title="Capacidade da feira"
+    <div className="grid gap-3 lg:grid-cols-[1.1fr_1.25fr_1fr_1fr]">
+      <CompactCard
+        title="Capacidade"
         icon={<Layers3 className="h-4 w-4" />}
-        isOpen={openAll}
-        onToggle={() => setOpenAll((v) => !v)}
+        accentClassName="bg-[color:var(--brand-blue)]"
       >
-        <div className="space-y-2">
-          <MiniStat
-            icon={<Store className="h-4 w-4" />}
-            label="Barracas vinculadas"
-            value={stallsLabel}
-          />
+        <CompactMetric
+          icon={<Store className="h-4 w-4" />}
+          label="Barracas"
+          value={`${kpis.linked}/${stallsCap ?? kpis.linked}`}
+        />
+        <CompactMetric
+          icon={<Users className="h-4 w-4" />}
+          label="Expositores"
+          value={String(kpis.exhibitors)}
+        />
+      </CompactCard>
 
-          <MiniStat
-            icon={<Users className="h-4 w-4" />}
-            label="Expositores vinculados"
-            value={exhibitorsLabel}
-          />
-
-          <MiniStat
-            icon={<Store className="h-4 w-4" />}
-            label="Capacidade (barracas)"
-            value={stallsCap ? `${stallsCap}` : "—"}
-            sub="limite de barracas nesta feira"
-          />
-        </div>
-      </AccordionKpiCard>
-
-      {/* 2) Status */}
-      <AccordionKpiCard
-        accent="purple"
-        title="Status dos expositores"
+      <CompactCard
+        title="Status"
         icon={<Users className="h-4 w-4" />}
-        isOpen={openAll}
-        onToggle={() => setOpenAll((v) => !v)}
+        accentClassName="bg-[color:var(--brand-pink)]"
       >
-        <div className="space-y-2">
+        <div className="flex flex-col gap-1.5">
           <OwnerFairStatusCountBadge
             status="SELECIONADO"
             count={kpis.statusCounts.SELECIONADO ?? 0}
-            className="w-full justify-between"
+            className="w-full justify-between rounded-md"
           />
           <OwnerFairStatusCountBadge
             status="AGUARDANDO_PAGAMENTO"
             count={kpis.statusCounts.AGUARDANDO_PAGAMENTO ?? 0}
-            className="w-full justify-between"
+            className="w-full justify-between rounded-md"
           />
           <OwnerFairStatusCountBadge
             status="AGUARDANDO_ASSINATURA"
             count={kpis.statusCounts.AGUARDANDO_ASSINATURA ?? 0}
-            className="w-full justify-between"
+            className="w-full justify-between rounded-md"
           />
           <OwnerFairStatusCountBadge
             status="CONCLUIDO"
             count={kpis.statusCounts.CONCLUIDO ?? 0}
-            className="w-full justify-between"
+            className="w-full justify-between rounded-md"
           />
         </div>
-      </AccordionKpiCard>
+      </CompactCard>
 
-      {/* 4) Financeiro */}
-      <AccordionKpiCard
-        accent="orange"
+      <CompactCard
         title="Financeiro"
         icon={<HandCoins className="h-4 w-4" />}
-        isOpen={openAll}
-        onToggle={() => setOpenAll((v) => !v)}
+        accentClassName="bg-[color:var(--brand-yellow)]"
       >
-        {/* ✅ Mais compacto: menos espaço vertical */}
-        <div className="space-y-4">
-          {/* HERO compacto */}
-          <div className="space-y-1">
-            <div className="text-xs text-muted-foreground">Recebido</div>
-
-            <div className="text-2xl font-semibold tracking-tight tabular-nums">
-              {formatMoneyBRLFromCents(paidCents)}
-            </div>
-
-            <div className="text-xs text-muted-foreground">
-              {paidPctLabel} do total ({formatMoneyBRLFromCents(soldCents)})
-            </div>
+        <div className="space-y-2">
+          <div className="text-2xl font-semibold text-primary">
+            {formatMoneyBRLFromCents(kpis.totalPaidCents)}
           </div>
-
-          {/* PROGRESSO compacto */}
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Pago</span>
-              <span className="tabular-nums">
-                {formatMoneyBRLFromCents(paidCents)} / {formatMoneyBRLFromCents(soldCents)}
-              </span>
-            </div>
-
-            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full bg-foreground/70 transition-all"
-                style={{ width: `${paidPct * 100}%` }}
-              />
-            </div>
+          <div className="text-sm text-primary/56">
+            de {formatMoneyBRLFromCents(kpis.totalSoldCents)}
           </div>
-
-
+          <ProgressLine value={paidPct} />
+          <div className="flex items-center justify-between text-sm text-primary/56">
+            <span>Em aberto</span>
+            <span>{formatMoneyBRLFromCents(kpis.totalOpenCents)}</span>
+          </div>
         </div>
-      </AccordionKpiCard>
+      </CompactCard>
 
-      {/* 3) Concluídos */}
-      <AccordionKpiCard
-        accent="emerald"
+      <CompactCard
         title="Concluídos"
         icon={<CheckCircle2 className="h-4 w-4" />}
-        isOpen={openAll}
-        onToggle={() => setOpenAll((v) => !v)}
+        accentClassName="bg-[color:var(--brand-green)]"
       >
         <div className="space-y-3">
-          <div className="flex items-end justify-between gap-4">
+          {/* Ratio + percentage em linha */}
+          <div className="flex items-end justify-between">
             <div>
-              <div className="text-3xl tracking-tight font-semibold">
+              <span className="text-3xl font-semibold leading-none text-primary">
                 {kpis.doneExhibitors}
-                <span className="text-muted-foreground">/{kpis.exhibitors}</span>
-              </div>
-              <div className="text-xs text-muted-foreground">expositores finalizados</div>
+              </span>
+              <span className="text-xl font-normal text-primary/32">/{kpis.exhibitors}</span>
             </div>
-
-            <div className="text-sm font-medium text-muted-foreground">{donePctLabel}</div>
+            <div className="rounded-full bg-[color:var(--brand-green)]/10 px-2.5 py-1 text-xs font-semibold text-[color:var(--brand-green)]">
+              {Math.round(donePct * 100)}%
+            </div>
           </div>
-
-          <SlimProgress value={donePct} />
-
-          <MiniStatCompact
-            label="Barracas"
-            sub="vinculadas / compradas"
-            value={`${kpis.linked}/${kpis.purchased}`}
-          />
+          {/* Progress bar com label */}
+          <div className="space-y-1">
+            <div className="text-xs text-primary/48">Expositores finalizados</div>
+            <ProgressLine value={donePct} color="var(--brand-green)" />
+          </div>
+          {/* Barracas vinculadas */}
+          <div className="flex items-center justify-between rounded-lg border border-border bg-muted/32 px-3 py-2">
+            <span className="text-xs text-primary/58">Barracas vinculadas</span>
+            <span className="font-display text-sm font-semibold text-[color:var(--brand-green)]">
+              {kpis.linked}/{kpis.purchased}
+            </span>
+          </div>
         </div>
-      </AccordionKpiCard>
-
-
+      </CompactCard>
     </div>
-  )
+  );
 }
 
-/**
- * Formata centavos para BRL.
- * Mantemos aqui para o KPI ser auto-suficiente e evitar “contrato implícito” com outras libs.
- */
+function CompactCard({
+  title,
+  icon,
+  accentClassName,
+  children,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  accentClassName: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="overflow-hidden border-border bg-white py-0 shadow-[0_18px_38px_-36px_rgba(1,0,119,0.12)]">
+      <div className={`h-1 ${accentClassName}`} />
+      <div className="space-y-3 px-4 py-3.5">
+        <div className="flex items-center justify-between">
+          <div className="font-display text-base text-primary">{title}</div>
+          <div className="text-primary/34">{icon}</div>
+        </div>
+        {children}
+      </div>
+    </Card>
+  );
+}
+
+function CompactMetric({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-border bg-muted/32 px-3 py-2">
+      <div className="flex items-center gap-2 text-primary/58">
+        {icon}
+        <span className="text-sm">{label}</span>
+      </div>
+      <span className="font-display text-base text-primary">{value}</span>
+    </div>
+  );
+}
+
+function ProgressLine({ value, color }: { value: number; color?: string }) {
+  const pct = Math.max(0, Math.min(1, value));
+
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-muted">
+      <div
+        className="h-full rounded-full bg-primary/80 transition-[width] duration-500"
+        style={{
+          width: `${pct * 100}%`,
+          ...(color ? { backgroundColor: color } : {}),
+        }}
+      />
+    </div>
+  );
+}
+
 function formatMoneyBRLFromCents(cents: number) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
-  }).format((cents ?? 0) / 100)
-}
-
-/**
- * Linha de estatística "limpa" para o Financeiro.
- * Responsabilidade:
- * - Dar clareza ao label/valor sem virar uma lista apertada.
- * - Quando danger=true, destacamos com cor/contorno de alerta.
- *
- * Ajuste desta iteração:
- * - padding menor (px-3 py-2) para reduzir altura geral
- */
-function StatRow({
-  label,
-  value,
-  sub,
-  danger,
-}: {
-  label: string
-  value: string
-  sub?: string
-  danger?: boolean
-}) {
-  return (
-    <div
-      className={cn(
-        "flex items-center justify-between rounded-xl border px-3 py-2",
-        "bg-muted/10",
-        danger ? "border-destructive/40 text-destructive" : "",
-      )}
-    >
-      <div className="min-w-0">
-        <div className="text-sm font-medium truncate">{label}</div>
-        {sub ? <div className="text-xs text-muted-foreground truncate">{sub}</div> : null}
-      </div>
-
-      <div className="text-sm font-semibold tabular-nums">{value}</div>
-    </div>
-  )
-}
-
-/**
- * Mini card ainda mais compacto para caber no KPI sem aumentar altura.
- * Uso: comparativos rápidos (ex.: vinculadas/compradas).
- */
-function MiniStatCompact({
-  label,
-  sub,
-  value,
-}: {
-  label: string
-  sub?: string
-  value: string
-}) {
-  return (
-    <div className="flex items-center justify-between rounded-xl border bg-muted/10 px-3 py-2">
-      <div className="min-w-0">
-        <div className="text-xs font-medium text-foreground truncate">{label}</div>
-        {sub ? <div className="text-[11px] text-muted-foreground truncate">{sub}</div> : null}
-      </div>
-
-      <div className="text-sm font-semibold tabular-nums">{value}</div>
-    </div>
-  )
-}
-
-/**
- * Card que abre/fecha clicando no header inteiro.
- * Regra:
- * - o estado é controlado externamente (isOpen)
- * - clicar em qualquer card alterna "todos"
- *
- * Ajustes desta iteração:
- * - min-h controlado para evitar cards “esticados”
- * - padding do header reduzido (mais compacto)
- */
-function AccordionKpiCard({
-  title,
-  icon,
-  accent,
-  isOpen,
-  onToggle,
-  children,
-}: {
-  title: string
-  icon: React.ReactNode
-  accent: "blue" | "purple" | "emerald" | "orange"
-  isOpen: boolean
-  onToggle: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <Card
-      className={cn(
-        "border-muted/60 shadow-sm",
-        "w-full", // ✅ controla altura para evitar “esticado”
-        accentBorderClass(accent),
-      )}
-    >
-      <CardHeader
-        className="pb-1 pt-4 select-none cursor-pointer"
-        role="button"
-        tabIndex={0}
-        onClick={onToggle}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") onToggle()
-        }}
-        title={isOpen ? "Clique para recolher" : "Clique para expandir"}
-      >
-        <CardTitle className="flex items-center justify-between text-sm font-medium text-muted-foreground">
-          <span className="flex items-center gap-2">{title}</span>
-
-          <span className="flex items-center gap-2 text-muted-foreground/70">
-            {icon}
-
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 transition-transform duration-200",
-                isOpen ? "rotate-180" : "rotate-0",
-              )}
-            />
-          </span>
-        </CardTitle>
-      </CardHeader>
-
-      {isOpen ? <CardContent className="pt-2">{children}</CardContent> : null}
-    </Card>
-  )
-}
-
-function accentBorderClass(accent: "blue" | "purple" | "emerald" | "orange") {
-  switch (accent) {
-    case "blue":
-      return "border-l-4 border-l-blue-400/70"
-    case "purple":
-      return "border-l-4 border-l-purple-400/70"
-    case "emerald":
-      return "border-l-4 border-l-emerald-400/70"
-    case "orange":
-      return "border-l-4 border-l-orange-400/70"
-    default:
-      return ""
-  }
-}
-
-/**
- * Mini card interno (alinhamento padrão):
- * [ícone + texto/subtexto] .......... [valor]
- */
-function MiniStat({
-  icon,
-  label,
-  value,
-  sub,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  sub?: string
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted/10 px-3 py-2">
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="text-muted-foreground/80">{icon}</span>
-
-        <div className="min-w-0">
-          <div className="text-xs font-medium text-foreground truncate">{label}</div>
-          {sub ? <div className="text-[11px] text-muted-foreground truncate">{sub}</div> : null}
-        </div>
-      </div>
-
-      <div className="text-sm font-semibold tabular-nums">{value}</div>
-    </div>
-  )
-}
-
-function SlimProgress({ value }: { value: number }) {
-  const pct = Math.max(0, Math.min(1, value))
-
-  return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-      <div className="h-full bg-foreground/70" style={{ width: `${pct * 100}%` }} />
-    </div>
-  )
+    maximumFractionDigits: 0,
+  }).format((cents ?? 0) / 100);
 }

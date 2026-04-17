@@ -1,19 +1,13 @@
 "use client";
 
-/**
- * Layout do route group (app).
- *
- * Responsabilidades:
- * - Proteger todas as páginas do painel
- * - Evitar flash de conteúdo antes da verificação de auth
- * - Mostrar spinner enquanto valida sessão
- */
-
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/providers/auth-provider";
+import { AppShellHeader } from "./components/app-shell-header";
+import { onSessionExpired } from "@/app/shared/auth/session-events";
+import { toast } from "@/components/ui/toast";
 
 export default function AppLayout({
   children,
@@ -21,16 +15,10 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { isAuthenticated, isReady } = useAuth();
-
-  /**
-   * Controla se a verificação de auth já foi feita.
-   * Enquanto false, mostramos loading.
-   */
+  const { isAuthenticated, isReady, logout } = useAuth();
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    // Espera o AuthProvider carregar o token do storage
     if (!isReady) return;
 
     if (!isAuthenticated) {
@@ -42,24 +30,33 @@ export default function AppLayout({
     setChecked(true);
   }, [isAuthenticated, isReady, router]);
 
-  /**
-   * Enquanto verifica:
-   * - não renderiza o app
-   * - mostra spinner centralizado
-   */
+  useEffect(() => {
+    if (!isReady) return;
+
+    return onSessionExpired(() => {
+      logout();
+      toast.warning({
+        title: "Voce foi desconectado",
+        subtitle: "Sua sessao expirou. Entre novamente para continuar.",
+      });
+      router.replace("/login");
+    });
+  }, [isReady, logout, router]);
+
   if (!checked) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Spinner className="h-6 w-6 text-muted-foreground" />
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Spinner className="h-6 w-6 text-primary" />
       </div>
     );
   }
 
-  /**
-   * Se não autenticado, evita renderizar conteúdo.
-   * O redirect já foi disparado.
-   */
   if (!isAuthenticated) return null;
 
-  return <>{children}</>;
+  return (
+    <div className="min-h-screen bg-white text-foreground">
+      <AppShellHeader />
+      <div className="pt-[4.5rem]">{children}</div>
+    </div>
+  );
 }

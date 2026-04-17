@@ -40,7 +40,10 @@ import {
   Ruler,
   CreditCard,
   MapPin,
+  Clock,
+  ArrowRight,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { getOwnerFairStatusMeta } from "./owner-fair-status-badges";
 import { FairExhibitorContractDialog } from "../contratos/fair-exhibitor-contract-dialog";
 import { ChangeExhibitorStatusDialog } from "../exhibitor/change-exhibitor-status-dialog";
@@ -48,6 +51,7 @@ import { FairExhibitorDetailsDialog } from "../exhibitor/fair-exhibitor-details-
 import { ExhibitorPaymentsDialog } from "../pagamentos/exhibitor-payments-dialog";
 import { FairTax } from "@/app/modules/fairs/fairs.schemas";
 import { SlotMapDialog } from "../map/slot-map-dialog";
+import { useFairMapQuery } from "@/app/modules/fair-maps/fair-maps.queries";
 
 type Props = {
   fairId: string;
@@ -189,6 +193,8 @@ function resolveRowSlotState(row: FairExhibitorRow) {
       kind: "none" as const,
       slotNumber: null as number | null,
       slotClientKey: null as string | null,
+      commercialStatus: null as string | null,
+      priceCents: null as number | null,
     };
   }
 
@@ -198,6 +204,8 @@ function resolveRowSlotState(row: FairExhibitorRow) {
       kind: s ? ("single_ok" as const) : ("single_missing" as const),
       slotNumber: s?.number ?? null,
       slotClientKey: s?.clientKey ?? null,
+      commercialStatus: s?.commercialStatus ?? null,
+      priceCents: s?.priceCents ?? null,
     };
   }
 
@@ -209,12 +217,16 @@ function resolveRowSlotState(row: FairExhibitorRow) {
       kind: "multi_ok" as const,
       slotNumber: null as number | null,
       slotClientKey: null as string | null,
+      commercialStatus: null as string | null, // omit for multi
+      priceCents: null as number | null,
     };
   }
   return {
     kind: "multi_missing" as const,
     slotNumber: null as number | null,
     slotClientKey: null as string | null,
+    commercialStatus: null as string | null,
+    priceCents: null as number | null,
   };
 }
 
@@ -379,12 +391,14 @@ function SlotDot({
   onClick,
 }: {
   state:
-    | { kind: "none" | "single_missing" | "multi_missing"; slotNumber: null; slotClientKey: string | null }
-    | { kind: "single_ok"; slotNumber: number | null; slotClientKey: string | null }
-    | { kind: "multi_ok"; slotNumber: null; slotClientKey: null };
+    | { kind: "none" | "single_missing" | "multi_missing"; slotNumber: null; slotClientKey: string | null; commercialStatus?: string | null; priceCents?: number | null }
+    | { kind: "single_ok"; slotNumber: number | null; slotClientKey: string | null; commercialStatus?: string | null; priceCents?: number | null }
+    | { kind: "multi_ok"; slotNumber: null; slotClientKey: null; commercialStatus?: string | null; priceCents?: number | null };
   onClick: () => void;
 }) {
   const isOk = state.kind === "single_ok" || state.kind === "multi_ok";
+  const status = state.commercialStatus;
+  const price = state.priceCents;
 
   const label =
     state.kind === "single_ok"
@@ -402,19 +416,44 @@ function SlotDot({
         ? "Vários slots"
         : "Sem slot";
 
-  const tooltipLines =
-    state.kind === "single_ok"
+  const statusLabelMap: Record<string, string> = {
+    AVAILABLE: "Disponível",
+    RESERVED: "Reservado",
+    CONFIRMED: "Confirmado",
+    BLOCKED: "Bloqueado",
+  };
+
+  const tooltipLines = [
+    ...(state.kind === "single_ok"
       ? [
           typeof state.slotNumber === "number"
             ? `Slot ${state.slotNumber}`
             : "Slot vinculado (sem número).",
-          "Clique para abrir o mapa.",
         ]
       : state.kind === "multi_ok"
-        ? ["Este expositor possui múltiplas barracas.", "Clique para abrir o mapa."]
+        ? ["Este expositor possui múltiplas barracas."]
         : state.kind === "none"
-          ? ["Nenhuma barraca vinculada ainda.", "Clique para abrir o mapa."]
-          : ["Há barraca(s) sem slot.", "Clique para abrir o mapa."];
+          ? ["Nenhuma barraca vinculada ainda."]
+          : ["Há barraca(s) sem slot."]),
+  ];
+
+  if (status) {
+    tooltipLines.push(`Status comercial: ${statusLabelMap[status] ?? status}`);
+  }
+  if (typeof price === "number") {
+    tooltipLines.push(`Valor: ${formatMoneyBRLFromCents(price)}`);
+  }
+
+  tooltipLines.push("Clique para abrir o mapa.");
+
+  const toneClass =
+    status === "BLOCKED"
+      ? "border-rose-300 bg-rose-200 text-rose-900"
+      : status === "RESERVED"
+        ? "border-blue-300 bg-blue-200 text-blue-900"
+        : isOk
+          ? "border-emerald-200 bg-emerald-100 text-emerald-800"
+          : "border-rose-200 bg-rose-100 text-rose-800";
 
   return (
     <TooltipProvider>
@@ -426,12 +465,9 @@ function SlotDot({
             className={cn(
               "mx-auto inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold tabular-nums",
               "transition hover:scale-[1.03] active:scale-[0.98]",
-              isOk
-                ? "border-emerald-200 bg-emerald-100 text-emerald-800"
-                : "border-rose-200 bg-rose-100 text-rose-800",
+              toneClass,
             )}
             aria-label={tooltipTitle}
-            title={tooltipTitle}
           >
             <span className="leading-none">{label}</span>
           </button>
@@ -503,8 +539,50 @@ export function FairStallsTable({
 
   const slotState = slotRow ? resolveRowSlotState(slotRow) : null;
 
+  // ✅ Detecção de Reservas para o Banner
+  const fairMap = useFairMapQuery(fairId);
+  const reservedSlotsCount = React.useMemo(() => {
+    return fairMap.data?.slots?.filter((s) => s.commercialStatus === "RESERVED").length ?? 0;
+  }, [fairMap.data?.slots]);
+
   return (
-    <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
+    <div className="overflow-hidden rounded-lg border border-border bg-white shadow-[0_20px_48px_-42px_rgba(1,0,119,0.12)]">
+      {/* 🚀 Banner de Alerta de Reservas */}
+      {reservedSlotsCount > 0 && (
+        <div className="relative overflow-hidden bg-primary px-4 py-2.5 text-primary-foreground">
+          {/* Decoração Pulsante de fundo */}
+          <div className="absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-white/10 to-transparent pointer-events-none" />
+          
+          <div className="relative flex flex-col items-center justify-between gap-3 sm:flex-row">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm">
+                <Clock className="h-4 w-4 text-white" />
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-sm font-bold tracking-tight">
+                  Atenção: Existem {reservedSlotsCount} {reservedSlotsCount === 1 ? 'reserva pendente' : 'reservas pendentes'}!
+                </p>
+                <p className="text-[10px] uppercase font-semibold text-primary-foreground/78">
+                  Clique no botão ao lado para gerenciar no mapa
+                </p>
+              </div>
+            </div>
+
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-8 gap-2 border-none bg-white px-3 text-xs font-bold text-primary shadow-sm hover:bg-white/90"
+              onClick={() => {
+                setSlotRow(null); // Abre o mapa sem foco em um expositor específico
+                setSlotOpen(true);
+              }}
+            >
+              Abrir Mapa
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
       <SlotMapDialog
         open={slotOpen}
         onOpenChange={(open) => {
@@ -555,10 +633,10 @@ export function FairStallsTable({
         ownerFairId={paymentsRow?.ownerFairId ?? null}
       />
 
-      <div className="flex flex-col gap-2 border-b px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-1.5 border-b border-border px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-0.5">
-          <div className="text-sm font-medium">Expositores vinculados</div>
-          <div className="text-xs text-muted-foreground">
+          <div className="font-display text-base text-primary">Expositores vinculados</div>
+          <div className="text-sm text-primary/58">
             {isLoading
               ? "Carregando…"
               : isError
@@ -579,7 +657,7 @@ export function FairStallsTable({
               <TableColGroup />
 
               <TableHeader>
-                <TableRow className="bg-muted/20 hover:bg-muted/20">
+                <TableRow className="bg-muted/35 hover:bg-muted/35">
                   <TableHead className="whitespace-nowrap">Expositor</TableHead>
                   <TableHead className="whitespace-nowrap">Telefone</TableHead>
                   <TableHead className="whitespace-nowrap">Email</TableHead>
@@ -618,7 +696,7 @@ export function FairStallsTable({
                   const slot = resolveRowSlotState(row);
 
                   return (
-                    <TableRow key={row.ownerFairId} className="transition hover:bg-muted/30">
+                    <TableRow key={row.ownerFairId} className="transition hover:bg-muted/20">
                       {/* ✅ Expositor menor + ellipsis + tooltip com nome completo */}
                       <TableCell className="min-w-0">
                         <TooltipProvider>
@@ -723,8 +801,8 @@ export function FairStallsTable({
                 {!isError && data.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={10} className="py-10 text-center">
-                      <div className="text-sm font-medium">Nenhum expositor encontrado</div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-sm font-medium text-primary">Nenhum expositor encontrado</div>
+                      <div className="text-xs text-primary/58">
                         Tente alterar os filtros de busca.
                       </div>
                     </TableCell>

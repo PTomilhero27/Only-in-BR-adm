@@ -27,6 +27,9 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/components/ui/toast";
 import { useGlobalFair } from "../../../components/global-fair-provider";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircle, Zap } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 // ───────────────────────── Extracted modules ─────────────────────────
 import { useUndoRedo } from "./use-undo-redo";
@@ -129,11 +132,23 @@ export function MapaClient({ fairId }: { fairId: string }) {
     return map;
   }, [fairMap.data]);
 
+  const marketplaceCounts = React.useMemo(() => {
+    const slots = (fairMap.data as any)?.slots ?? [];
+    return {
+      AVAILABLE: slots.filter((s: any) => s.commercialStatus === "AVAILABLE").length,
+      RESERVED: slots.filter((s: any) => s.commercialStatus === "RESERVED").length,
+      CONFIRMED: slots.filter((s: any) => s.commercialStatus === "CONFIRMED").length,
+      BLOCKED: slots.filter((s: any) => s.commercialStatus === "BLOCKED").length,
+    };
+  }, [fairMap.data]);
+
   const activeMarketplaceSlot = React.useMemo(() => {
     if (!activeMarketplaceSlotId) return null;
     const slots = (fairMap.data as any)?.slots ?? [];
     return slots.find((s: any) => s.id === activeMarketplaceSlotId) ?? null;
   }, [activeMarketplaceSlotId, fairMap.data]);
+
+  const pendingReservationsCount = marketplaceCounts.RESERVED;
 
   const templateElements = fairMap.data?.template?.elements ?? [];
 
@@ -693,22 +708,48 @@ export function MapaClient({ fairId }: { fairId: string }) {
   return (
     <div className="flex h-[calc(100vh-64px)] flex-col gap-3 p-4">
       <MapHeader
-        mapName={mapName}
+        mapName={(fairMap.data as any)?.template?.title ?? "Mapa"}
         isEditMode={isEditMode}
         onOpenSettings={() => setSettingsOpen(true)}
         onSave={() => {
           if (isFinalizada) {
-            toast.error({ title: "Ação bloqueada", subtitle: "A feira está finalizada. O mapa não pode ser salvo." });
+            toast.error({
+              title: "Ação bloqueada",
+              subtitle: "A feira está finalizada. O mapa não pode ser salvo.",
+            });
             return;
           }
           if (!isEditMode) {
-            toast.error({ title: "Salvar indisponível", subtitle: "Ative o modo edição para salvar alterações do template." });
+            toast.error({
+              title: "Salvar indisponível",
+              subtitle: "Ative o modo edição para salvar alterações do template.",
+            });
             return;
           }
           if (isSaving) return;
           void handleSaveTemplate();
         }}
+        isSaving={isSaving}
       />
+
+      {pendingReservationsCount > 0 && !isEditMode && (
+        <Alert variant="default" className="border-blue-200 bg-blue-50/50">
+          <AlertCircle className="h-4 w-4 text-blue-600" />
+          <AlertTitle className="text-blue-800 font-semibold">Reservas Pendentes</AlertTitle>
+          <AlertDescription className="text-blue-700 flex items-center justify-between gap-4">
+            <span>
+              Existem <strong>{pendingReservationsCount}</strong> reservas aguardando conclusão neste
+              mapa.
+            </span>
+            <Badge
+              variant="outline"
+              className="bg-blue-100 border-blue-200 text-blue-800 animate-pulse"
+            >
+              Ação Requerida
+            </Badge>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <MapSettingsDialog
         open={settingsOpen}
@@ -820,7 +861,7 @@ export function MapaClient({ fairId }: { fairId: string }) {
       >
         <div className={`space-y-3 transition-all duration-300 ${leftPanelClass}`}>
           <MapToolsPanel tool={tool} onChangeTool={setTool} isEditMode={isEditMode} />
-          <LegendPanel />
+          <LegendPanel counts={marketplaceCounts} />
         </div>
 
         <div className="relative overflow-hidden rounded-xl border bg-background touch-none">

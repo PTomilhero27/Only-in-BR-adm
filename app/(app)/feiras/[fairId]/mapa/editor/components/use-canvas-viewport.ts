@@ -31,6 +31,13 @@ export type ViewportState = {
   position: { x: number; y: number };
 };
 
+export type ViewportBounds = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
 export function useCanvasViewport() {
   const [scale, setScale] = React.useState(1);
   const [position, setPosition] = React.useState({ x: 0, y: 0 });
@@ -67,32 +74,51 @@ export function useCanvasViewport() {
     [scale, position],
   );
 
-  const fitToImage = React.useCallback(
+  const fitToBounds = React.useCallback(
     (
-      bgImage: HTMLImageElement,
+      bounds: ViewportBounds,
       stageSize: { width: number; height: number },
     ) => {
-      const imgW = bgImage.width || 1;
-      const imgH = bgImage.height || 1;
+      const width = Math.max(1, bounds.maxX - bounds.minX);
+      const height = Math.max(1, bounds.maxY - bounds.minY);
+
+      const horizontalPadding = Math.min(48, stageSize.width * 0.08);
+      const verticalPadding = Math.min(48, stageSize.height * 0.08);
+
+      const availableWidth = Math.max(1, stageSize.width - horizontalPadding * 2);
+      const availableHeight = Math.max(1, stageSize.height - verticalPadding * 2);
 
       const fit = clampScale(
-        Math.min(stageSize.width / imgW, stageSize.height / imgH),
+        Math.min(availableWidth / width, availableHeight / height),
       );
-      const renderedW = imgW * fit;
-      const renderedH = imgH * fit;
+      const renderedW = width * fit;
+      const renderedH = height * fit;
 
-      const x = (stageSize.width - renderedW) / 2;
-
-      const TOP_PADDING = 12;
-      const y =
-        stageSize.height > renderedH
-          ? TOP_PADDING
-          : (stageSize.height - renderedH) / 2;
+      const x = (stageSize.width - renderedW) / 2 - bounds.minX * fit;
+      const y = (stageSize.height - renderedH) / 2 - bounds.minY * fit;
 
       setScale(fit);
       setPosition({ x, y });
     },
     [],
+  );
+
+  const fitToImage = React.useCallback(
+    (
+      bgImage: HTMLImageElement,
+      stageSize: { width: number; height: number },
+    ) => {
+      fitToBounds(
+        {
+          minX: 0,
+          minY: 0,
+          maxX: bgImage.width || 1,
+          maxY: bgImage.height || 1,
+        },
+        stageSize,
+      );
+    },
+    [fitToBounds],
   );
 
   return {
@@ -101,6 +127,7 @@ export function useCanvasViewport() {
     position,
     setPosition,
     handleWheel,
+    fitToBounds,
     fitToImage,
   };
 }

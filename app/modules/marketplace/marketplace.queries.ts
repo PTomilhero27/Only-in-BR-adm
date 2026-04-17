@@ -2,10 +2,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { marketplaceService } from "./marketplace.service";
 import type {
+  ConfirmMarketplaceReservationInput,
   MarketplaceInterestStatus,
   MarketplaceSlotStatus,
+  NotifyMissingStallInput,
 } from "./marketplace.schema";
 import { fairMapsQueryKeys } from "../fair-maps/fair-maps.queries";
+import { fairExhibitorsQueryKeys } from "../fairs/exhibitors/exhibitors.queries";
 
 export const marketplaceKeys = {
   all: ["marketplace"] as const,
@@ -47,6 +50,21 @@ export function useUpdateSlotPriceMutation(fairId: string) {
       marketplaceService.updateSlotPrice(args.slotId, args.priceCents),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: fairMapsQueryKeys.byFairId(fairId) });
+    },
+  });
+}
+
+export function useUpdateSlotTentTypesMutation(fairId: string) {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (args: {
+      slotId: string;
+      configurations: Array<{ tentType: string; priceCents: number }>;
+    }) => marketplaceService.updateSlotTentTypes(args.slotId, args.configurations),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: fairMapsQueryKeys.byFairId(fairId) });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.reservations(fairId) });
     },
   });
 }
@@ -105,6 +123,53 @@ export function useUpdateInterestStatusMutation(fairId: string) {
       qc.invalidateQueries({ queryKey: marketplaceKeys.interests(fairId) });
       qc.invalidateQueries({ queryKey: marketplaceKeys.reservations(fairId) });
       qc.invalidateQueries({ queryKey: fairMapsQueryKeys.byFairId(fairId) });
+    },
+  });
+}
+
+export function useConfirmMarketplaceReservationMutation(fairId: string) {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (args: {
+      reservationId: string;
+      input: ConfirmMarketplaceReservationInput;
+    }) => marketplaceService.confirmReservation(args.reservationId, args.input),
+    onSuccess: async () => {
+      await qc.invalidateQueries({
+        queryKey: marketplaceKeys.reservations(fairId),
+      });
+      await qc.invalidateQueries({
+        queryKey: marketplaceKeys.interests(fairId),
+      });
+      await qc.invalidateQueries({
+        queryKey: fairMapsQueryKeys.byFairId(fairId),
+      });
+      await qc.invalidateQueries({
+        queryKey: fairMapsQueryKeys.availableStallFairs(fairId),
+      });
+      await qc.invalidateQueries({
+        queryKey: fairExhibitorsQueryKeys.list(fairId),
+      });
+    },
+  });
+}
+
+export function useNotifyMissingStallMutation(fairId: string) {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (args: {
+      reservationId: string;
+      input: NotifyMissingStallInput;
+    }) => marketplaceService.notifyMissingStall(args.reservationId, args.input),
+    onSuccess: async () => {
+      await qc.invalidateQueries({
+        queryKey: marketplaceKeys.reservations(fairId),
+      });
+      await qc.invalidateQueries({
+        queryKey: fairMapsQueryKeys.byFairId(fairId),
+      });
     },
   });
 }

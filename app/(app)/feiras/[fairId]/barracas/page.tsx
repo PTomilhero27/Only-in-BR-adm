@@ -2,61 +2,47 @@
 
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { MapPinned, Store, CheckCircle2, HandCoins, Map, FileText } from "lucide-react";
 
-import { Separator } from "@/components/ui/separator";
 import { AppBreadcrumb } from "@/components/breadcrumb/app-breadcrumb";
-
+import { Badge } from "@/components/ui/badge";
 import { useFairExhibitorsQuery } from "@/app/modules/fairs/exhibitors/exhibitors.queries";
 import type { OwnerFairStatus } from "@/app/modules/fairs/exhibitors/exhibitors.schema";
 import {
-  exhibitorDisplayName,
-  exhibitorDisplayDoc,
   exhibitorDisplayContact,
+  exhibitorDisplayDoc,
+  exhibitorDisplayName,
 } from "@/app/modules/fairs/exhibitors/exhibitors.schema";
-
+import { useMainContractTemplatesQuery } from "@/app/modules/contratos/document-templates/document-templates.queries";
+import { useUpsertFairContractSettingsMutation } from "@/app/modules/contratos/contract-settings/fair-contract-settings.queries";
 import { FairStallsFiltersBar } from "./components/fair-stalls-filters-bar";
 import { FairStallsTable } from "./components/table/fair-stalls-table";
 import { StallsKpiCards } from "./components/stalls-kpi-cards";
-
-// ✅ UI contrato da feira
-import { FairContractSettingsCard } from "./components/contratos/fair-contract-settings-card";
 import { FairContractSettingsDialog } from "./components/contratos/fair-contract-settings-dialog";
-
-// ✅ hooks reais (backend)
-import { useMainContractTemplatesQuery } from "@/app/modules/contratos/document-templates/document-templates.queries";
-import { useUpsertFairContractSettingsMutation } from "@/app/modules/contratos/contract-settings/fair-contract-settings.queries";
-
-// ✅ mapa
-import { FairMapPreviewCard } from "./components/map/fair-map-preview-card";
 import { SlotMapDialog } from "./components/map/slot-map-dialog";
 
-/**
- * Página: Barracas vinculadas (tabela).
- * Fix de Hooks:
- * - NÃO pode dar return antes de chamar os hooks.
- * - Sempre chamamos hooks com um fairId "safe" (string), e a query usa enabled internamente.
- */
+function fairStatusTone(status?: string | null) {
+  if (status === "ATIVA") {
+    return "border-transparent bg-[color:var(--brand-green)]/12 text-[color:var(--brand-green)]";
+  }
+
+  return "border-border bg-muted text-primary/70";
+}
+
 export default function FairStallsPage() {
   const params = useParams<{ fairId?: string }>();
-  const hasFairId =
-    typeof params?.fairId === "string" && params.fairId.length > 0;
-  const fairIdSafe = hasFairId ? params.fairId! : ""; // sempre string
+  const hasFairId = typeof params?.fairId === "string" && params.fairId.length > 0;
+  const fairIdSafe = hasFairId ? params.fairId! : "";
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<OwnerFairStatus | "ALL">("ALL");
-
-  // ✅ estado do dialog de contrato
   const [contractDialogOpen, setContractDialogOpen] = useState(false);
-
-  // ✅ estado do modal do mapa
   const [mapOpen, setMapOpen] = useState(false);
 
-  // ✅ hooks SEMPRE chamados (nunca condicional)
   const query = useFairExhibitorsQuery(fairIdSafe);
   const templatesQuery = useMainContractTemplatesQuery();
   const upsertContractMutation = useUpsertFairContractSettingsMutation();
 
-  // ✅ dados com defaults seguros (para não quebrar mesmo sem fairId/sem data)
   const fairName = query.data?.fair?.name ?? "Feira";
   const fairStatus = query.data?.fair?.status;
   const items = query.data?.items ?? [];
@@ -64,7 +50,6 @@ export default function FairStallsPage() {
   const fairTaxes = query.data?.fair?.taxes ?? [];
   const fairMap = query.data?.fair?.map ?? null;
 
-  // ✅ useMemo SEMPRE chamado (nunca condicional)
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
 
@@ -102,9 +87,6 @@ export default function FairStallsPage() {
       } as Record<OwnerFairStatus, number>,
     );
 
-    const doneExhibitors = statusCounts.CONCLUIDO;
-
-    // ✅ financeiro
     const totalSoldCents = items.reduce(
       (acc, row) => acc + (row.payment?.totalCents ?? 0),
       0,
@@ -120,12 +102,11 @@ export default function FairStallsPage() {
       const purchases = row.purchasesPayments ?? [];
       let rowOverdue = 0;
 
-      for (const p of purchases) {
-        const inst = p.installments ?? [];
-        for (const it of inst) {
-          const due = new Date(it.dueDate);
-          const isOverdue = due < now && !it.paidAt;
-          if (isOverdue) rowOverdue += it.amountCents ?? 0;
+      for (const purchase of purchases) {
+        for (const installment of purchase.installments ?? []) {
+          const due = new Date(installment.dueDate);
+          const isOverdue = due < now && !installment.paidAt;
+          if (isOverdue) rowOverdue += installment.amountCents ?? 0;
         }
       }
 
@@ -136,11 +117,9 @@ export default function FairStallsPage() {
       exhibitors,
       purchased,
       linked,
-      doneExhibitors,
+      doneExhibitors: statusCounts.CONCLUIDO,
       statusCounts,
-
       stallsCapacity: query.data?.fair?.stallsCapacity ?? null,
-
       totalSoldCents,
       totalPaidCents,
       totalOpenCents,
@@ -148,154 +127,230 @@ export default function FairStallsPage() {
     };
   }, [items, query.data?.fair]);
 
-  const debugEnabled = process.env.NODE_ENV !== "production";
-
-  // ✅ Render SEM early return antes dos hooks: fazemos condicional aqui dentro
   const showMissingFairId = !hasFairId;
   const showError = hasFairId && query.isError;
-
   const errorMessage =
-    (query.error as any)?.message ?? String(query.error ?? "Erro desconhecido");
+    (query.error as { message?: string } | null)?.message ??
+    String(query.error ?? "Erro desconhecido");
 
   return (
-    <div className="p-6 space-y-6">
-      <AppBreadcrumb
-        items={[
-          { label: "home", href: "/dashboard" },
-          { label: `Dashboard ${fairName}`, href: `/feiras/${fairIdSafe}` },
-          { label: "Barracas" },
-        ]}
-      />
+    <div className="bg-white px-4 py-4 sm:px-6 lg:px-8 lg:py-5">
+      <div className="mx-auto max-w-[1600px] space-y-4">
+        <AppBreadcrumb
+          items={[
+            { label: "home", href: "/dashboard" },
+            { label: `Dashboard ${fairName}`, href: `/feiras/${fairIdSafe}` },
+            { label: "Barracas" },
+          ]}
+        />
 
-      {/* ✅ Debug leve */}
-      {debugEnabled ? (
-        <div className="text-xs text-muted-foreground">
-          <span className="font-mono">fairId: {String(params?.fairId)}</span>
-          {" · "}
-          <span>loading: {String(query.isLoading)}</span>
-          {" · "}
-          <span>items: {items.length}</span>
-        </div>
-      ) : null}
-
-      {/* ✅ Caso fairId esteja ausente */}
-      {showMissingFairId ? (
-        <div className="space-y-3 rounded border p-4">
-          <h1 className="text-xl font-semibold">Barracas vinculadas</h1>
-          <p className="text-sm text-muted-foreground">
-            Não foi possível identificar{" "}
-            <span className="font-medium">fairId</span> na rota. Verifique se a
-            pasta está como <span className="font-mono">[fairId]</span>.
-          </p>
-          <pre className="text-xs whitespace-pre-wrap rounded border p-3">
-            params = {JSON.stringify(params, null, 2)}
-          </pre>
-        </div>
-      ) : null}
-
-      {/* ✅ Caso tenha erro real (inclui Zod mismatch) */}
-      {showError ? (
-        <div className="space-y-3 rounded border border-red-200 bg-red-50 p-4">
-          <h2 className="font-semibold text-red-700">
-            Erro ao carregar expositores
-          </h2>
-          <pre className="text-xs whitespace-pre-wrap">{errorMessage}</pre>
-        </div>
-      ) : null}
-
-      {/* ✅ Conteúdo normal (somente quando tem fairId e não está em erro) */}
-      {!showMissingFairId && !showError ? (
-        <>
-          <div className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight">
-              Barracas vinculadas
-            </h1>
-            <div className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{fairName}</span>
-              {fairStatus ? <span> · {fairStatus}</span> : null}
-            </div>
-            <Separator />
+        {showMissingFairId ? (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-5 py-4">
+            <h1 className="text-xl text-primary">Barracas vinculadas</h1>
+            <p className="mt-2 text-sm leading-6 text-primary/70">
+              Nao foi possivel identificar o <span className="font-mono">fairId</span> na rota.
+            </p>
           </div>
+        ) : null}
 
-          {/* ✅ Card do mapa */}
-          <FairMapPreviewCard
-            fairId={fairIdSafe}
-            fairName={fairName}
-            isLoading={query.isLoading}
-            fairMap={fairMap}
-            onOpenMap={() => setMapOpen(true)}
-            defaultOpen={false} // ou true
-          />
+        {showError ? (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-5 py-4">
+            <h2 className="text-base text-rose-700">Erro ao carregar expositores</h2>
+            <pre className="mt-2 whitespace-pre-wrap text-xs text-rose-700/90">{errorMessage}</pre>
+          </div>
+        ) : null}
 
-          {/* ✅ Contrato vinculado à feira */}
-          <FairContractSettingsCard
-            fairName={fairName}
-            contractSettings={contractSettings}
-            isLoading={query.isLoading}
-            onOpenDialog={() => setContractDialogOpen(true)}
-          />
+        {!showMissingFairId && !showError ? (
+          <>
+            <section>
+              <div className="flex  items-end justify-between gap-6">
+                {/* Texto à esquerda */}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="rounded-md border border-border bg-muted px-2.5 py-1 text-[11px] text-primary/75">
+                      Painel de barracas
+                    </Badge>
+                    {fairStatus ? (
+                      <Badge className={`rounded-md px-2.5 py-1 text-[11px] ${fairStatusTone(fairStatus)}`}>
+                        {fairStatus}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="space-y-1">
+                    <h1 className="text-2xl leading-none text-primary sm:text-[2rem]">
+                      Barracas vinculadas
+                    </h1>
+                    <p className="text-sm leading-6 text-primary/58">
+                      Controle mapa, contratos, expositores e financeiro em uma leitura mais direta.
+                    </p>
+                  </div>
+                </div>
 
-          <FairContractSettingsDialog
-            open={contractDialogOpen}
-            onOpenChange={setContractDialogOpen}
-            currentTemplateId={contractSettings?.templateId ?? null}
-            templates={templatesQuery.data ?? []}
-            isLoadingTemplates={templatesQuery.isLoading}
-            isSaving={upsertContractMutation.isPending}
-            onConfirm={(templateId) => {
-              upsertContractMutation.mutate({
-                fairId: fairIdSafe,
-                input: { templateId },
-              });
-            }}
-          />
+                {/* KPIs à direita — grid uniforme de 6 colunas */}
+                <div className="grid grid-cols-3 gap-2  sm:grid-cols-6">
+                  <SummaryPill
+                    icon={<Store className="h-4 w-4" />}
+                    label="Expositores"
+                    value={String(kpis.exhibitors)}
+                  />
+                  <SummaryPill
+                    icon={<MapPinned className="h-4 w-4" />}
+                    label="Barracas"
+                    value={`${kpis.linked}/${kpis.purchased || 0}`}
+                  />
+                  <SummaryPill
+                    icon={<CheckCircle2 className="h-4 w-4" />}
+                    label="Concluidos"
+                    value={`${kpis.doneExhibitors}/${kpis.exhibitors || 0}`}
+                  />
+                  <SummaryPill
+                    icon={<HandCoins className="h-4 w-4" />}
+                    label="Recebido"
+                    value={formatMoneyBRLFromCents(kpis.totalPaidCents)}
+                  />
+                  <ClickableSummaryPill
+                    icon={<Map className="h-4 w-4" />}
+                    label="Mapa "
+                    accentColor="var(--brand-green)"
+                    value={
+                      query.isLoading
+                        ? "…"
+                        : (() => {
+                            const elements = fairMap?.template?.elements ?? [];
+                            const total = elements.filter((e) => e.type === "BOOTH_SLOT").length;
+                            const linked = fairMap?.links?.length ?? 0;
+                            return `${linked}/${total || 0}`;
+                          })()
+                    }
+                    disabled={query.isLoading || !fairMap?.id}
+                    onClick={() => setMapOpen(true)}
+                  />
+                  <ClickableSummaryPill
+                    icon={<FileText className="h-4 w-4" />}
+                    label="Contrato"
+                    accentColor="var(--brand-yellow)"
+                    value={contractSettings?.template.title ?? "Nenhum"}
+                    disabled={query.isLoading}
+                    onClick={() => setContractDialogOpen(true)}
+                  />
+                </div>
+              </div>
+            </section>
 
-          {/* ✅ KPI */}
-          <StallsKpiCards kpis={kpis} />
+            <FairContractSettingsDialog
+              open={contractDialogOpen}
+              onOpenChange={setContractDialogOpen}
+              currentTemplateId={contractSettings?.templateId ?? null}
+              templates={templatesQuery.data ?? []}
+              isLoadingTemplates={templatesQuery.isLoading}
+              isSaving={upsertContractMutation.isPending}
+              onConfirm={(templateId) => {
+                upsertContractMutation.mutate({
+                  fairId: fairIdSafe,
+                  input: { templateId },
+                });
+              }}
+            />
 
-          {/* ✅ Modal do mapa */}
-          <SlotMapDialog
-            open={mapOpen}
-            onOpenChange={setMapOpen}
-            fairId={fairIdSafe}
-            exhibitorName={fairName}
-            slotNumber={null}
-            slotClientKey={null}
-          />
+            <SlotMapDialog
+              open={mapOpen}
+              onOpenChange={setMapOpen}
+              fairId={fairIdSafe}
+              exhibitorName={fairName}
+              slotNumber={null}
+              slotClientKey={null}
+            />
 
-          {/* ✅ Filtro */}
-          <FairStallsFiltersBar
-            q={q}
-            onChangeQ={setQ}
-            status={status}
-            onChangeStatus={setStatus}
-            onClear={() => {
-              setQ("");
-              setStatus("ALL");
-            }}
-          />
+            <StallsKpiCards kpis={kpis} />
 
-          <FairStallsTable
-            fairId={fairIdSafe}
-            data={filtered}
-            isLoading={query.isLoading}
-            isError={query.isError}
-            fairTaxes={fairTaxes}
-          />
+            <FairStallsFiltersBar
+              q={q}
+              onChangeQ={setQ}
+              status={status}
+              onChangeStatus={setStatus}
+              onClear={() => {
+                setQ("");
+                setStatus("ALL");
+              }}
+            />
 
-          {/* ✅ Debug do payload */}
-          {/* {debugEnabled ? (
-            <details className="rounded border p-3">
-              <summary className="cursor-pointer text-sm font-medium">
-                Debug: payload /exhibitors
-              </summary>
-              <pre className="mt-3 text-xs whitespace-pre-wrap">
-                {JSON.stringify(query.data, null, 2)}
-              </pre>
-            </details>
-          ) : null} */}
-        </>
-      ) : null}
+            <FairStallsTable
+              fairId={fairIdSafe}
+              data={filtered}
+              isLoading={query.isLoading}
+              isError={query.isError}
+              fairTaxes={fairTaxes}
+            />
+          </>
+        ) : null}
+      </div>
     </div>
   );
+}
+
+function SummaryPill({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg w-30 border border-border bg-white px-3 py-2.5 shadow-[0_14px_30px_-28px_rgba(1,0,119,0.12)]">
+      <div className="flex items-center gap-1.5 text-primary/48">
+        {icon}
+        <span className="text-[11px] uppercase">{label}</span>
+      </div>
+      <div className="mt-1.5 font-display text-base text-primary">{value}</div>
+    </div>
+  );
+}
+
+function ClickableSummaryPill({
+  icon,
+  label,
+  value,
+  onClick,
+  disabled,
+  accentColor,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  onClick: () => void;
+  disabled?: boolean;
+  accentColor?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="group w-30 overflow-hidden rounded-lg border border-border bg-white text-left shadow-[0_14px_30px_-28px_rgba(1,0,119,0.12)] transition-all hover:border-[color:var(--brand-blue)]/30 hover:bg-[color:var(--brand-blue)]/[0.03] hover:shadow-[0_14px_30px_-20px_rgba(1,0,119,0.18)] disabled:cursor-not-allowed disabled:opacity-60"
+      style={{ cursor: disabled ? 'not-allowed' : 'pointer' }}
+    >
+      {/* Faixa de cor no topo */}
+      <div
+        className="h-1 w-full transition-[height] duration-200 group-hover:h-1.5"
+        style={{ backgroundColor: accentColor ?? 'var(--brand-blue)' }}
+      />
+      <div className="px-3 py-2.5">
+        <div className="flex items-center gap-1.5 text-primary/48">
+          {icon}
+          <span className="text-[11px] uppercase">{label}</span>
+        </div>
+        <div className="mt-1.5 truncate font-display text-base text-primary">{value}</div>
+      </div>
+    </button>
+  );
+}
+
+function formatMoneyBRLFromCents(cents: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 0,
+  }).format((cents ?? 0) / 100);
 }

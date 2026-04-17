@@ -5,6 +5,7 @@
 
 import ky from "ky";
 import { tokenStore } from "../auth/token";
+import { emitSessionExpired } from "../auth/session-events";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -20,6 +21,15 @@ export const http = ky.create({
       (request) => {
         const token = tokenStore.get();
         if (token) request.headers.set("Authorization", `Bearer ${token}`);
+      },
+    ],
+    afterResponse: [
+      (_request, _options, response) => {
+        const hasToken = !!tokenStore.get();
+
+        if (hasToken && response.status === 401) {
+          emitSessionExpired({ reason: "unauthorized" });
+        }
       },
     ],
   },

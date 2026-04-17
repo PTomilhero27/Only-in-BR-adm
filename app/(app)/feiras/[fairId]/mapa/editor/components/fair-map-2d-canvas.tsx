@@ -24,6 +24,7 @@ import {
   touchToContainerPoint,
   dist,
   mid,
+  type ViewportBounds,
 } from "./use-canvas-viewport";
 
 import {
@@ -44,6 +45,119 @@ export type LineDraft = {
   points: number[];
   preview: { x: number; y: number } | null;
 };
+
+function mergeBounds(
+  current: ViewportBounds | null,
+  next: ViewportBounds | null,
+): ViewportBounds | null {
+  if (!current) return next;
+  if (!next) return current;
+
+  return {
+    minX: Math.min(current.minX, next.minX),
+    minY: Math.min(current.minY, next.minY),
+    maxX: Math.max(current.maxX, next.maxX),
+    maxY: Math.max(current.maxY, next.maxY),
+  };
+}
+
+function getElementBounds(el: MapElement): ViewportBounds | null {
+  if (el.type === "RECT" || el.type === "SQUARE" || el.type === "BOOTH_SLOT") {
+    const width = Math.max(10, safeNumber((el as any).width, 60));
+    const height = Math.max(10, safeNumber((el as any).height, 60));
+    return {
+      minX: safeNumber(el.x, 0),
+      minY: safeNumber(el.y, 0),
+      maxX: safeNumber(el.x, 0) + width,
+      maxY: safeNumber(el.y, 0) + height,
+    };
+  }
+
+  if (el.type === "CIRCLE") {
+    const radius = Math.max(10, safeNumber((el as any).radius, 45));
+    return {
+      minX: safeNumber(el.x, 0) - radius,
+      minY: safeNumber(el.y, 0) - radius,
+      maxX: safeNumber(el.x, 0) + radius,
+      maxY: safeNumber(el.y, 0) + radius,
+    };
+  }
+
+  if (el.type === "TREE") {
+    const radius = Math.max(6, safeNumber((el as any).radius, 14));
+    return {
+      minX: safeNumber(el.x, 0) - radius,
+      minY: safeNumber(el.y, 0) - radius,
+      maxX: safeNumber(el.x, 0) + radius,
+      maxY: safeNumber(el.y, 0) + radius,
+    };
+  }
+
+  if (el.type === "TEXT") {
+    const textValue = String((el as any).text ?? (el as any).label ?? "");
+    const fontSize = safeNumber(
+      (el as any).fontSize ?? (el as any).style?.fontSize,
+      18,
+    );
+    const padding = safeNumber(
+      (el as any).padding ?? (el as any).style?.padding,
+      8,
+    );
+    const boxed = Boolean((el as any).boxed ?? (el as any).style?.boxed);
+
+    const width = boxed
+      ? Math.max(60, textValue.length * (fontSize * 0.62)) + padding * 2
+      : Math.max(fontSize, textValue.length * (fontSize * 0.62));
+    const height = boxed ? fontSize + padding * 2 : fontSize;
+
+    return {
+      minX: safeNumber(el.x, 0),
+      minY: safeNumber(el.y, 0),
+      maxX: safeNumber(el.x, 0) + width,
+      maxY: safeNumber(el.y, 0) + height,
+    };
+  }
+
+  if (el.type === "LINE") {
+    const points = Array.isArray((el as any).points) ? (el as any).points : [];
+    if (points.length < 2) return null;
+
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+
+    for (let i = 0; i < points.length; i += 2) {
+      const x = safeNumber(points[i], 0);
+      const y = safeNumber(points[i + 1], 0);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+
+    const strokeInset = Math.max(
+      2,
+      safeNumber((el as any).style?.strokeWidth, 3),
+    );
+
+    return {
+      minX: minX - strokeInset,
+      minY: minY - strokeInset,
+      maxX: maxX + strokeInset,
+      maxY: maxY + strokeInset,
+    };
+  }
+
+  return null;
+}
+
+function getElementsBounds(elements: MapElement[]) {
+  return elements.reduce<ViewportBounds | null>(
+    (bounds, el) => mergeBounds(bounds, getElementBounds(el)),
+    null,
+  );
+}
 
 // ───────────────────────── Props ─────────────────────────
 
@@ -99,10 +213,12 @@ export function FairMap2DCanvas({
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const stageRef = React.useRef<Konva.Stage | null>(null);
   const trRef = React.useRef<Konva.Transformer | null>(null);
+  const allowAutoFitRef = React.useRef(true);
+  const lastAutoFitKeyRef = React.useRef<string | null>(null);
 
   // Viewport
   const stageSize = useStageSize(containerRef);
-  const { scale, setScale, position, setPosition, handleWheel, fitToImage } =
+  const { scale, setScale, position, setPosition, handleWheel, fitToBounds } =
     useCanvasViewport();
   const isCoarsePointer = useCoarsePointer();
 
@@ -134,17 +250,48 @@ export function FairMap2DCanvas({
   // Background
   const [bgImage] = useImage(backgroundUrl ?? "", "anonymous");
 
-  // Fit inicial do background
-  const didInitRef = React.useRef<string | null>(null);
+  const contentBounds = React.useMemo(() => {
+    const backgroundBounds = bgImage
+      ? {
+          minX: 0,
+          minY: 0,
+          maxX: bgImage.width || 1,
+          maxY: bgImage.height || 1,
+        }
+      : null;
+
+    return mergeBounds(backgroundBounds, getElementsBounds(elements));
+  }, [bgImage, elements]);
+
+  const markViewportAsAdjusted = React.useCallback(() => {
+    allowAutoFitRef.current = false;
+  }, []);
+
   React.useEffect(() => {
-    if (!bgImage || !backgroundUrl) return;
+    if (viewportToken == null) return;
+    allowAutoFitRef.current = true;
+    lastAutoFitKeyRef.current = null;
+  }, [viewportToken]);
 
-    if (didInitRef.current === backgroundUrl && viewportToken == null) return;
+  React.useEffect(() => {
+    if (!contentBounds) return;
+    if (!allowAutoFitRef.current) return;
 
-    fitToImage(bgImage, stageSize);
+    const fitKey = [
+      viewportToken ?? "default",
+      stageSize.width,
+      stageSize.height,
+      contentBounds.minX,
+      contentBounds.minY,
+      contentBounds.maxX,
+      contentBounds.maxY,
+    ].join(":");
 
-    didInitRef.current = backgroundUrl;
-  }, [bgImage, backgroundUrl, stageSize.width, stageSize.height, viewportToken, fitToImage]);
+    if (lastAutoFitKeyRef.current === fitKey) return;
+
+    fitToBounds(contentBounds, stageSize);
+    lastAutoFitKeyRef.current = fitKey;
+  }, [contentBounds, fitToBounds, stageSize.height, stageSize.width, viewportToken]);
 
   const stageDraggable =
     tool === "SELECT" && !isCoarsePointer && !isSelecting && !isNodeDragging;
@@ -353,7 +500,15 @@ export function FairMap2DCanvas({
         x={position.x}
         y={position.y}
         draggable={stageDraggable}
-        onWheel={handleWheel}
+        onWheel={(e) => {
+          markViewportAsAdjusted();
+          handleWheel(e);
+        }}
+        onDragStart={(e) => {
+          if (e.target === stageRef.current) {
+            markViewportAsAdjusted();
+          }
+        }}
         onDragEnd={(e) => {
           if (e.target === stageRef.current) {
             setPosition({ x: e.target.x(), y: e.target.y() });
@@ -428,6 +583,7 @@ export function FairMap2DCanvas({
           const target = e.target;
 
           if (touches && touches.length === 2) {
+            markViewportAsAdjusted();
             const p1 = touchToContainerPoint(touches[0], containerRef.current);
             const p2 = touchToContainerPoint(touches[1], containerRef.current);
             startPinch(p1, p2);
@@ -442,6 +598,7 @@ export function FairMap2DCanvas({
 
           if (touches && touches.length === 1) {
             if (tool === "SELECT" && isMapAreaTarget(target)) {
+              markViewportAsAdjusted();
               startTouchPan(touchToContainerPoint(touches[0], containerRef.current));
               return;
             }

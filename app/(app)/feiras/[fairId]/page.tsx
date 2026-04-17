@@ -1,14 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-
 import { FairDashboardCards } from "./components/fair-dashboard-cards";
-import { AppBreadcrumb } from "@/components/breadcrumb/app-breadcrumb";
 
 /**
  * Esta página é responsável por exibir o "dashboard" de uma feira específica.
@@ -47,12 +43,6 @@ export default function FairDashboardPage() {
         <div className="p-6 space-y-6">
             {/* Cabeçalho da área da feira */}
             <div className="space-y-2">
-                <AppBreadcrumb
-                    items={[
-                        { label: "Dashboard", href: "/dashboard" },
-                        { label: "Feira" },
-                    ]}
-                />
                 <div className="flex items-center justify-between gap-3">
                     <div>
                         <h1 className="text-2xl font-semibold">Dashboard da feira</h1>

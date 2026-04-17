@@ -1,20 +1,5 @@
 "use client";
 
-/**
- * Tile de Feiras no Dashboard.
- *
- * Regras:
- * - Mostra apenas feiras ATIVAS (contagem).
- * - Clique:
- *   - 0 ativas -> modal "Cadastrar nova feira"
- *   - 1 ativa -> entra direto na feira
- *   - 2+ ativas -> modal com filtro/lista (apenas ativas)
- *
- * Decisão:
- * - Buscamos ATIVAS direto no backend para reduzir carga no dashboard
- * - Mantemos fallback de UX (loading, erro)
- */
-
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Store } from "lucide-react";
@@ -24,13 +9,11 @@ import { FairSwitcherDialog } from "./fair-switcher-dialog";
 import { DashboardTile } from "../dashboard-tile";
 
 import { useFairsQuery } from "@/app/modules/fairs/hooks/use-fairs-query";
-import { toast } from "@/components/ui/toast";
 import { getErrorMessage } from "@/app/shared/utils/get-error-message";
+import { toast } from "@/components/ui/toast";
 
 export function FairsDashboardTile() {
   const router = useRouter();
-
-  // ✅ Dashboard precisa somente das ATIVAS
   const {
     data: activeFairs = [],
     isLoading,
@@ -38,13 +21,10 @@ export function FairsDashboardTile() {
     error,
   } = useFairsQuery({ status: "ATIVA" });
 
-  
-
   const [openPicker, setOpenPicker] = useState(false);
   const [openNoActive, setOpenNoActive] = useState(false);
 
   const { activeCount, pendingCount } = useMemo(() => {
-    // TODO: pendências reais virão do backend (financeiro/contratos etc.)
     const pendingCount = 0;
 
     return {
@@ -77,43 +57,52 @@ export function FairsDashboardTile() {
     setOpenPicker(true);
   }
 
-  const showPending = pendingCount > 0;
+  const footer = isLoading
+    ? "Carregando feiras"
+    : activeCount === 0
+      ? "Cadastrar nova feira"
+      : activeCount === 1
+        ? "Abrir feira ativa"
+        : "Escolher feira ativa";
 
   return (
     <>
       <DashboardTile
         title="Feiras"
-        description="Gestão e acesso rápido"
+        description="Acesse rapidamente o modulo principal da operacao."
+        eyebrow="Modulo principal"
         onClick={handleClick}
         icon={<Store className="h-5 w-5" />}
-        accentClassName="bg-blue-500"
+        accentClassName="bg-brand-green"
+        footer={footer}
         rightSlot={
-          showPending ? (
-            <div className="relative">
-              <Bell className="h-5 w-5 text-red-600" />
-              <span className="sr-only">Há pendências</span>
+          pendingCount > 0 ? (
+            <div className="flex size-10 items-center justify-center rounded-md border border-red-200 bg-red-50 text-red-600">
+              <Bell className="h-4 w-4" />
+              <span className="sr-only">Ha pendencias</span>
             </div>
-          ) : null
+          ) : (
+            <div className="font-display rounded-md border border-border bg-muted px-3 py-1 text-[11px] text-primary/72">
+              Prioridade
+            </div>
+          )
         }
       >
-        <div>
-          <div className="text-xs text-muted-foreground">Ativas</div>
-          <div className="text-2xl font-semibold">
-            {isLoading ? "…" : activeCount}
-          </div>
+        <div className="flex items-center gap-2">
+          <span className="font-display rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground">
+            {isLoading ? "Carregando" : `${activeCount} ativa${activeCount === 1 ? "" : "s"}`}
+          </span>
         </div>
       </DashboardTile>
 
-      {/* Modal quando há 2+ feiras ativas */}
       <FairSwitcherDialog
         open={openPicker}
         onOpenChange={setOpenPicker}
         fairs={activeFairs}
         title="Selecionar feira ativa"
-        description="Digite para filtrar e clique para abrir."
+        description="Busque por nome, endereco ou data para abrir a feira certa."
       />
 
-      {/* Modal quando não há feira ativa */}
       <NoActiveFairsDialog
         open={openNoActive}
         onOpenChange={setOpenNoActive}

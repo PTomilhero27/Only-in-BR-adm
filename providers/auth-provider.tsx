@@ -12,7 +12,8 @@
  * - No futuro, podemos validar o token chamando /users/me (mais robusto).
  */
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { resetSessionExpiredFlag } from "@/app/shared/auth/session-events";
 
 export type AuthUser = {
   id: string;
@@ -60,21 +61,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsReady(true);
   }, []);
 
-  function login(payload: { token: string; user: AuthUser }) {
+  const login = useCallback((payload: { token: string; user: AuthUser }) => {
     localStorage.setItem(TOKEN_KEY, payload.token);
     localStorage.setItem(USER_KEY, JSON.stringify(payload.user));
+    resetSessionExpiredFlag();
 
     setToken(payload.token);
     setUser(payload.user);
-  }
+  }, []);
 
-  function logout() {
+  const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    resetSessionExpiredFlag();
 
     setToken(null);
     setUser(null);
-  }
+  }, []);
 
   return (
     <AuthContext.Provider
