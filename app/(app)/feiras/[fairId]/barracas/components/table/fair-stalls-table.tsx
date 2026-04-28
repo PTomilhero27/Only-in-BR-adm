@@ -42,6 +42,7 @@ import {
   MapPin,
   Clock,
   ArrowRight,
+  FilePenLine,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getOwnerFairStatusMeta } from "./owner-fair-status-badges";
@@ -84,14 +85,15 @@ function TableColGroup() {
    * - Coluna Expositor menor (14%) para forçar ellipsis em nomes longos.
    */
   const widths = [
-    "8%", // Expositor (↓ era 18%)
-    "14%", // Telefone
-    "18%", // Email
-    "7%",  // Slot
-    "7%",  // Compradas
-    "9%",  // Vinculadas
-    "10%", // Tamanhos
-    "12%", // Pagamentos
+    "8%",  // Expositor
+    "12%", // Telefone
+    "16%", // Email
+    "6%",  // Slot
+    "6%",  // Compradas
+    "8%",  // Vinculadas
+    "8%",  // Tamanhos
+    "11%", // Pagamentos
+    "9%",  // Contrato
     "9%",  // Status
     "6%",  // Ações
   ];
@@ -247,6 +249,7 @@ function TableSkeleton() {
             <TableHead className="whitespace-nowrap text-center">Vinculadas</TableHead>
             <TableHead className="whitespace-nowrap text-center">Tamanhos</TableHead>
             <TableHead className="whitespace-nowrap text-center">Pagamentos</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Contrato</TableHead>
             <TableHead className="whitespace-nowrap text-center">Status</TableHead>
             <TableHead className="whitespace-nowrap text-center">Ações</TableHead>
           </TableRow>
@@ -278,6 +281,9 @@ function TableSkeleton() {
               </TableCell>
               <TableCell className="text-center">
                 <Skeleton className="mx-auto h-7 w-[160px] rounded-full" />
+              </TableCell>
+              <TableCell className="text-center">
+                <Skeleton className="mx-auto h-7 w-[100px] rounded-full" />
               </TableCell>
               <TableCell className="text-center">
                 <Skeleton className="mx-auto h-7 w-[110px] rounded-full" />
@@ -380,6 +386,70 @@ function StatusBadge({ status }: { status: OwnerFairStatus }) {
     >
       {label}
     </Badge>
+  );
+}
+
+/**
+ * Badge de status de assinatura do contrato.
+ */
+function ContractBadge({ row }: { row: FairExhibitorRow }) {
+  const signed = row.contractSigned || !!row.contractSignedAt;
+  const signedAt = row.contractSignedAt;
+
+  const signedDate = signedAt
+    ? new Date(signedAt).toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : null;
+
+  if (signed) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              variant="outline"
+              className="inline-flex items-center gap-1.5 rounded-full border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
+            >
+              <FilePenLine className="h-3 w-3" />
+              Assinado
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px]">
+            <div className="text-xs font-medium">Contrato assinado</div>
+            {signedDate && (
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                Assinado em {signedDate}
+              </div>
+            )}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            variant="outline"
+            className="inline-flex items-center gap-1.5 rounded-full border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700"
+          >
+            <Clock className="h-3 w-3" />
+            Pendente
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[260px]">
+          <div className="text-xs font-medium">Aguardando assinatura</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            O expositor ainda não assinou o contrato.
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -666,6 +736,7 @@ export function FairStallsTable({
                   <TableHead className="whitespace-nowrap text-center">Vinculadas</TableHead>
                   <TableHead className="whitespace-nowrap text-center">Tamanhos</TableHead>
                   <TableHead className="whitespace-nowrap text-center">Pagamentos</TableHead>
+                  <TableHead className="whitespace-nowrap text-center">Contrato</TableHead>
                   <TableHead className="whitespace-nowrap text-center">Status</TableHead>
                   <TableHead className="whitespace-nowrap text-center">Ações</TableHead>
                 </TableRow>
@@ -781,6 +852,10 @@ export function FairStallsTable({
                         />
                       </TableCell>
 
+                      <TableCell className="text-center">
+                        <ContractBadge row={row} />
+                      </TableCell>
+
                       <TableCell className="text-center min-w-0">
                         <StatusBadge status={row.status} />
                       </TableCell>
@@ -800,7 +875,7 @@ export function FairStallsTable({
 
                 {!isError && data.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="py-10 text-center">
+                    <TableCell colSpan={11} className="py-10 text-center">
                       <div className="text-sm font-medium text-primary">Nenhum expositor encontrado</div>
                       <div className="text-xs text-primary/58">
                         Tente alterar os filtros de busca.

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { MapPinned, Store, CheckCircle2, HandCoins, Map, FileText } from "lucide-react";
+import { MapPinned, Store, CheckCircle2, HandCoins, Map, FileText, FilePenLine } from "lucide-react";
 
 import { AppBreadcrumb } from "@/components/breadcrumb/app-breadcrumb";
 import { Badge } from "@/components/ui/badge";
@@ -113,6 +113,9 @@ export default function FairStallsPage() {
       return acc + rowOverdue;
     }, 0);
 
+    const contractSigned = items.filter((i) => i.contractSigned || !!i.contractSignedAt).length;
+    const contractPending = exhibitors - contractSigned;
+
     return {
       exhibitors,
       purchased,
@@ -124,6 +127,8 @@ export default function FairStallsPage() {
       totalPaidCents,
       totalOpenCents,
       overdueOpenCents,
+      contractSigned,
+      contractPending,
     };
   }, [items, query.data?.fair]);
 
@@ -187,7 +192,7 @@ export default function FairStallsPage() {
                 </div>
 
                 {/* KPIs à direita — grid uniforme de 6 colunas */}
-                <div className="grid grid-cols-3 gap-2  sm:grid-cols-6">
+                <div className="grid grid-cols-3 gap-2  sm:grid-cols-7">
                   <SummaryPill
                     icon={<Store className="h-4 w-4" />}
                     label="Expositores"
@@ -207,6 +212,11 @@ export default function FairStallsPage() {
                     icon={<HandCoins className="h-4 w-4" />}
                     label="Recebido"
                     value={formatMoneyBRLFromCents(kpis.totalPaidCents)}
+                  />
+                  <SummaryPill
+                    icon={<FilePenLine className="h-4 w-4" />}
+                    label="Assinaturas"
+                    value={`${kpis.contractSigned}/${kpis.exhibitors || 0}`}
                   />
                   <ClickableSummaryPill
                     icon={<Map className="h-4 w-4" />}

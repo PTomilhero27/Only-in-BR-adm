@@ -389,6 +389,7 @@ export const FairExhibitorRowSchema = z.object({
   // ✅ robustez: alguns payloads não mandam isso
   isComplete: z.boolean().optional(),
 
+  contractSigned: z.boolean().optional().default(false),
   contractSignedAt: z.string().datetime().nullable(),
 
   observations: z.string().nullable().optional(),

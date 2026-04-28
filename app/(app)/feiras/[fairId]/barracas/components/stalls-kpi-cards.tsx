@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, HandCoins, Layers3, Store, Users } from "lucide-react";
+import { CheckCircle2, FilePenLine, HandCoins, Layers3, Store, Users } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -22,6 +22,8 @@ export function StallsKpiCards({
     totalPaidCents: number;
     totalOpenCents: number;
     overdueOpenCents: number;
+    contractSigned: number;
+    contractPending: number;
   };
 }) {
   const stallsCap = kpis.stallsCapacity ?? null;
@@ -29,9 +31,11 @@ export function StallsKpiCards({
     kpis.exhibitors > 0 ? Math.min(1, kpis.doneExhibitors / kpis.exhibitors) : 0;
   const paidPct =
     kpis.totalSoldCents > 0 ? Math.min(1, kpis.totalPaidCents / kpis.totalSoldCents) : 0;
+  const contractPct =
+    kpis.exhibitors > 0 ? Math.min(1, kpis.contractSigned / kpis.exhibitors) : 0;
 
   return (
-    <div className="grid gap-3 lg:grid-cols-[1.1fr_1.25fr_1fr_1fr]">
+    <div className="grid gap-3 lg:grid-cols-[1fr_1.25fr_1fr_1fr_1fr]">
       <CompactCard
         title="Capacidade"
         icon={<Layers3 className="h-4 w-4" />}
@@ -126,6 +130,36 @@ export function StallsKpiCards({
             <span className="text-xs text-primary/58">Barracas vinculadas</span>
             <span className="font-display text-sm font-semibold text-[color:var(--brand-green)]">
               {kpis.linked}/{kpis.purchased}
+            </span>
+          </div>
+        </div>
+      </CompactCard>
+
+      <CompactCard
+        title="Contratos"
+        icon={<FilePenLine className="h-4 w-4" />}
+        accentClassName="bg-[color:var(--brand-blue)]"
+      >
+        <div className="space-y-3">
+          <div className="flex items-end justify-between">
+            <div>
+              <span className="text-3xl font-semibold leading-none text-primary">
+                {kpis.contractSigned}
+              </span>
+              <span className="text-xl font-normal text-primary/32">/{kpis.exhibitors}</span>
+            </div>
+            <div className="rounded-full bg-[color:var(--brand-blue)]/10 px-2.5 py-1 text-xs font-semibold text-[color:var(--brand-blue)]">
+              {Math.round(contractPct * 100)}%
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-primary/48">Contratos assinados</div>
+            <ProgressLine value={contractPct} color="var(--brand-blue)" />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border border-border bg-muted/32 px-3 py-2">
+            <span className="text-xs text-primary/58">Pendentes</span>
+            <span className="font-display text-sm font-semibold text-amber-600">
+              {kpis.contractPending}
             </span>
           </div>
         </div>
