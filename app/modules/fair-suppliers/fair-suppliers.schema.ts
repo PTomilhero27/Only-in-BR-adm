@@ -196,7 +196,11 @@ export function getSupplierInstallmentStats(supplier: FairSupplier) {
 }
 
 export function getDisplaySupplierStatus(supplier: FairSupplier): SupplierStatus {
-  if (supplier.status) return supplier.status;
+  if (supplier.status) {
+    if (supplier.status === "PAGO") return "PAID";
+    if (supplier.status === "NAO_PAGO" || supplier.status === "NÃO PAGO") return "PENDING";
+    return supplier.status as SupplierStatus;
+  }
   const pending = getSupplierPendingCents(supplier);
   const paid = getSupplierPaidCents(supplier);
   if (pending <= 0) return "PAID";
