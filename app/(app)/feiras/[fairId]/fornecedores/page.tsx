@@ -2,19 +2,17 @@
 
 import { useParams } from "next/navigation";
 
-/**
- * Página de Fornecedores da feira.
- * Por enquanto é placeholder para evitar 404 e permitir navegação.
- */
-export default function FairSuppliersPage() {
-  const { fairId } = useParams<{ fairId: string }>();
+import { FairSuppliersPage } from "@/app/modules/fair-suppliers/components/fair-suppliers-page";
 
-  return (
-    <div className="p-6 space-y-2">
-      <h1 className="text-2xl font-semibold">Fornecedores</h1>
-      <p className="text-sm text-muted-foreground">
-        Feira: <code>{fairId}</code> — em construção.
-      </p>
-    </div>
-  );
+/**
+ * Rota da tela de fornecedores da feira.
+ * Esta página centraliza o cadastro e a importação dos fornecedores da feira.
+ * A remessa PIX não é gerada aqui; esta tela apenas garante que os dados financeiros
+ * e de PIX estejam corretos no sistema, preparando-os para geração futura da remessa.
+ */
+export default function FairSuppliersRoutePage() {
+  const params = useParams<{ fairId?: string }>();
+  const fairId = typeof params?.fairId === "string" ? params.fairId : "";
+
+  return <FairSuppliersPage fairId={fairId} />;
 }
