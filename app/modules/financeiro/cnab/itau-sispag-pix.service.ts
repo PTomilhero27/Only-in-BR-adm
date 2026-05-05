@@ -371,11 +371,6 @@ export class ItauSispagPixService {
     }
 
     this.assert(
-      this.formatCnabText(pag.favorecidoNome).length <= 30,
-      "favorecidoNome deve ter no máximo 30 caracteres no CNAB."
-    );
-
-    this.assert(
       this.formatCnabText(pag.nossoNumero ?? "").length <= 20,
       "nossoNumero deve ter no máximo 20 caracteres."
     );

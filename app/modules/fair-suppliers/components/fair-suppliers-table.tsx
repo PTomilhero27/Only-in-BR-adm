@@ -46,13 +46,182 @@ import { SupplierStatusBadge } from "./supplier-status-badge";
 import { SupplierInstallmentsPreview } from "./supplier-installments-preview";
 import { FairSupplierUpsertDialog } from "./fair-supplier-upsert-dialog";
 import { PixKeyTypeBadge } from "./pix-key-type-badge";
+import { CreatePixRemittanceDialog } from "../../pix-remittances/components/create-pix-remittance-dialog";
+import type { PixRemittanceListItem, PixRemittanceMode } from "../../pix-remittances/types";
 
 type Props = {
   fairId: string;
   data: FairSupplier[];
+  allSuppliers?: FairSupplier[];
+  remittances?: PixRemittanceListItem[];
   isLoading: boolean;
   isError: boolean;
 };
+
+type LinkedRemittance = {
+  id: string;
+  number?: string | null;
+  status?: string | null;
+  installments: FairSupplier["installments"];
+  source?: PixRemittanceListItem;
+};
+
+function getInstallmentRemittanceId(installment: FairSupplier["installments"][number]) {
+  const raw = installment as any;
+  return (
+    installment.remittanceId ??
+    raw.pixRemittanceId ??
+    raw.remittance?.id ??
+    raw.pixRemittance?.id ??
+    null
+  );
+}
+
+function getInstallmentRemittanceStatus(installment: FairSupplier["installments"][number]) {
+  const raw = installment as any;
+  return (
+    installment.remittanceStatus ??
+    raw.pixRemittanceStatus ??
+    raw.remittance?.status ??
+    raw.pixRemittance?.status ??
+    null
+  );
+}
+
+function getLinkedRemittances(
+  supplier: FairSupplier,
+  pixRemittances: PixRemittanceListItem[] = [],
+): LinkedRemittance[] {
+  const remittances = new Map<string, LinkedRemittance>();
+
+  pixRemittances.forEach((remittance) => {
+    const installments = supplier.installments.filter((installment) =>
+      remittance.items.some((item) => item.supplierInstallmentId === installment.id),
+    );
+
+    if (!installments.length) return;
+
+    remittances.set(remittance.id, {
+      id: remittance.id,
+      number: remittance.number ?? remittance.name ?? remittance.fileName ?? null,
+      status: remittance.status ?? null,
+      installments,
+      source: remittance,
+    });
+  });
+
+  supplier.installments.forEach((installment) => {
+    const id = getInstallmentRemittanceId(installment);
+    if (!id) return;
+
+    const current = remittances.get(id);
+    const status = getInstallmentRemittanceStatus(installment);
+    const number = installment.remittanceNumber ?? (installment as any).remittance?.number ?? null;
+
+    if (current) {
+      current.installments.push(installment);
+      current.status = current.status ?? status;
+      current.number = current.number ?? number;
+      return;
+    }
+
+    remittances.set(id, {
+      id,
+      number,
+      status,
+      installments: [installment],
+    });
+  });
+
+  return Array.from(remittances.values());
+}
+
+function getInferredRemittanceStatus(remittance: LinkedRemittance) {
+  return (
+    remittance.status ??
+    (remittance.installments.some((installment) => installment.status === "IN_REMITTANCE")
+      ? "GENERATED"
+      : null)
+  );
+}
+
+function getRemittanceItemAmount(remittance: LinkedRemittance, installmentId?: string) {
+  if (!installmentId) return undefined;
+  return remittance.source?.items.find((item) => item.supplierInstallmentId === installmentId)?.amountCents ?? undefined;
+}
+
+function buildRedoSuppliers(allSuppliers: FairSupplier[], remittance: LinkedRemittance): FairSupplier[] {
+  const sourceInstallmentIds = new Set(
+    remittance.source?.items
+      .map((item) => item.supplierInstallmentId)
+      .filter((id): id is string => Boolean(id)) ??
+      remittance.installments.map((installment) => installment.id).filter((id): id is string => Boolean(id)),
+  );
+
+  return allSuppliers.flatMap((supplier) => {
+    const installments = supplier.installments
+      .filter((installment) => installment.id && sourceInstallmentIds.has(installment.id))
+      .map((installment) => ({
+        ...installment,
+        amountCents: getRemittanceItemAmount(remittance, installment.id) ?? installment.amountCents,
+      }));
+
+    if (!installments.length) return [];
+
+    const totalAmountCents = installments.reduce(
+      (acc, installment) => acc + (installment.amountCents ?? 0),
+      0,
+    );
+
+    return {
+      ...supplier,
+      totalAmountCents,
+      pendingAmountCents: totalAmountCents,
+      installments,
+    };
+  });
+}
+
+function getRemittanceTotalAmountCents(remittance: LinkedRemittance) {
+  return remittance.installments.reduce(
+    (acc, installment) => acc + (installment.amountCents ?? 0),
+    0,
+  );
+}
+
+function RedoRemittanceAction({
+  fairId,
+  allSuppliers,
+  remittance,
+  variant = "outline",
+}: {
+  fairId: string;
+  allSuppliers: FairSupplier[];
+  remittance: LinkedRemittance;
+  variant?: "outline" | "ghost";
+}) {
+  if (getInferredRemittanceStatus(remittance) !== "GENERATED") return null;
+  const redoSuppliers = buildRedoSuppliers(allSuppliers, remittance);
+  if (!redoSuppliers.length) return null;
+  const initialMode =
+    remittance.source?.mode === "SPLIT_TWO" || remittance.source?.mode === "SINGLE"
+      ? (remittance.source.mode as PixRemittanceMode)
+      : undefined;
+
+  return (
+    <CreatePixRemittanceDialog
+      fairId={fairId}
+      suppliers={redoSuppliers}
+      redoRemittanceId={remittance.id}
+      initialMode={initialMode}
+      trigger={
+        <Button variant={variant} size="sm" className="h-8">
+          Refazer remessa
+        </Button>
+      }
+    />
+  );
+}
 
 function TableSkeleton() {
   return (
@@ -81,7 +250,14 @@ function TableSkeleton() {
   );
 }
 
-export function FairSuppliersTable({ fairId, data, isLoading, isError }: Props) {
+export function FairSuppliersTable({
+  fairId,
+  data,
+  allSuppliers = data,
+  remittances = [],
+  isLoading,
+  isError,
+}: Props) {
   const deleteMutation = useDeleteFairSupplierMutation(fairId);
 
   async function handleDelete(supplier: FairSupplier) {
@@ -151,6 +327,9 @@ export function FairSuppliersTable({ fairId, data, isLoading, isError }: Props) 
                 const stats = getSupplierInstallmentStats(supplier);
                 const warnings = validateSupplierForPixRemittance(supplier);
                 const pixComplete = supplier.pixKeyType && supplier.pixKey;
+                const redoRemittance = getLinkedRemittances(supplier, remittances).find(
+                  (remittance) => getInferredRemittanceStatus(remittance) === "GENERATED",
+                );
 
                 return (
                   <TableRow key={supplier.id} className="hover:bg-muted/20">
@@ -218,9 +397,18 @@ export function FairSuppliersTable({ fairId, data, isLoading, isError }: Props) 
                       <div className="space-y-1.5">
                         <SupplierStatusBadge status={status} />
                         {stats.includedInRemittanceCount > 0 ? (
-                          <Badge variant="outline" className="rounded-full border-indigo-200 bg-indigo-50 text-indigo-700">
-                            Ja entrou em remessa
-                          </Badge>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge variant="outline" className="rounded-full border-indigo-200 bg-indigo-50 text-indigo-700">
+                              Ja entrou em remessa
+                            </Badge>
+                            {redoRemittance ? (
+                              <RedoRemittanceAction
+                                fairId={fairId}
+                                allSuppliers={allSuppliers}
+                                remittance={redoRemittance}
+                              />
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
                     </TableCell>
@@ -228,6 +416,8 @@ export function FairSuppliersTable({ fairId, data, isLoading, isError }: Props) 
                       <RowActions
                         fairId={fairId}
                         supplier={supplier}
+                        allSuppliers={allSuppliers}
+                        remittances={remittances}
                         onDelete={() => handleDelete(supplier)}
                         isDeleting={deleteMutation.isPending}
                       />
@@ -282,11 +472,15 @@ function WarningsTooltip({ warnings }: { warnings: string[] }) {
 function RowActions({
   fairId,
   supplier,
+  allSuppliers,
+  remittances,
   onDelete,
   isDeleting,
 }: {
   fairId: string;
   supplier: FairSupplier;
+  allSuppliers: FairSupplier[];
+  remittances: PixRemittanceListItem[];
   onDelete: () => void;
   isDeleting: boolean;
 }) {
@@ -311,7 +505,12 @@ function RowActions({
           </Button>
         }
       />
-      <RemittancesDialog supplier={supplier} />
+      <RemittancesDialog
+        fairId={fairId}
+        supplier={supplier}
+        allSuppliers={allSuppliers}
+        remittances={remittances}
+      />
       <Button
         variant="ghost"
         size="icon"
@@ -347,10 +546,20 @@ function InstallmentsDialog({ supplier }: { supplier: FairSupplier; mode: "view"
   );
 }
 
-function RemittancesDialog({ supplier }: { supplier: FairSupplier }) {
-  const linked = useMemo(() => {
-    return supplier.installments.filter((item) => item.remittanceId || item.remittanceNumber);
-  }, [supplier.installments]);
+function RemittancesDialog({
+  fairId,
+  supplier,
+  allSuppliers,
+  remittances,
+}: {
+  fairId: string;
+  supplier: FairSupplier;
+  allSuppliers: FairSupplier[];
+  remittances: PixRemittanceListItem[];
+}) {
+  const linkedRemittances = useMemo(() => {
+    return getLinkedRemittances(supplier, remittances);
+  }, [remittances, supplier]);
 
   return (
     <Dialog>
@@ -366,25 +575,40 @@ function RemittancesDialog({ supplier }: { supplier: FairSupplier }) {
             Esta tela apenas acompanha vinculos. A geracao da remessa acontece em financeiro/remessas-pix.
           </DialogDescription>
         </DialogHeader>
-        {linked.length ? (
+        {linkedRemittances.length ? (
           <div className="space-y-2">
-            {linked.map((installment) => (
+            {linkedRemittances.map((remittance) => {
+              const totalAmountCents = getRemittanceTotalAmountCents(remittance);
+              const inferredStatus = getInferredRemittanceStatus(remittance);
+
+              return (
               <div
-                key={installment.id ?? installment.number}
-                className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                key={remittance.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
               >
                 <div className="space-y-0.5">
-                  <div className="text-sm font-medium text-primary">Parcela {installment.number}</div>
+                  <div className="text-sm font-medium text-primary">
+                    Remessa {remittance.number ?? remittance.id}
+                  </div>
                   <div className="text-xs text-primary/55">
-                    Remessa {installment.remittanceNumber ?? installment.remittanceId}
+                    {remittance.installments.length} parcela(s)
+                    {inferredStatus ? ` - ${inferredStatus}` : ""}
                   </div>
                 </div>
-                <Badge variant="outline" className="gap-1 rounded-full border-indigo-200 bg-indigo-50 text-indigo-700">
-                  <Banknote className="h-3 w-3" />
-                  {formatMoneyBRLFromCents(installment.amountCents)}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="gap-1 rounded-full border-indigo-200 bg-indigo-50 text-indigo-700">
+                    <Banknote className="h-3 w-3" />
+                    {formatMoneyBRLFromCents(totalAmountCents)}
+                  </Badge>
+                  <RedoRemittanceAction
+                    fairId={fairId}
+                    allSuppliers={allSuppliers}
+                    remittance={remittance}
+                  />
+                </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-primary/58">

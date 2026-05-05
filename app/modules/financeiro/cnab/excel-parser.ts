@@ -423,7 +423,7 @@ export async function parseExcelPayments(file: File): Promise<ParsedExcelRow[]> 
 
     const pagamento: ParsedPagamentoPreview | undefined = isValid
       ? {
-          favorecidoNome: formatText(rawNome, 30).trim(),
+          favorecidoNome: rawNome.trim(),
           favorecidoTipoInscricao: tipoInscricao!,
           favorecidoNumeroInscricao: cleanDoc,
           pixKey: normalizePixKeyForPreview(rawChavePix),

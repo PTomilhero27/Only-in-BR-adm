@@ -29,6 +29,8 @@ import { FairSupplierUpsertDialog } from "./fair-supplier-upsert-dialog";
 import { FairSuppliersTable } from "./fair-suppliers-table";
 import { ImportFairSuppliersDialog } from "./import-fair-suppliers-dialog";
 import { SupplierPaymentSummaryCard } from "./supplier-payment-summary-card";
+import { CreatePixRemittanceDialog } from "../../pix-remittances/components/create-pix-remittance-dialog";
+import { usePixRemittancesQuery } from "../../pix-remittances/pix-remittances.queries";
 
 type PixPendingFilter = "ALL" | "MISSING" | "COMPLETE";
 type InstallmentsFilter = "ALL" | "1" | "2";
@@ -40,6 +42,7 @@ export function FairSuppliersPage({ fairId }: { fairId: string }) {
   const [installments, setInstallments] = useState<InstallmentsFilter>("ALL");
 
   const query = useFairSuppliersQuery(fairId);
+  const remittancesQuery = usePixRemittancesQuery(fairId);
   const items = useMemo(() => query.data?.items ?? [], [query.data?.items]);
   const fairName = query.data?.fair?.name ?? "Feira";
 
@@ -119,8 +122,8 @@ export function FairSuppliersPage({ fairId }: { fairId: string }) {
 
         {!showMissingFairId && !showError ? (
           <>
-            <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className="space-y-1.5">
+            <section className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+              <div className="space-y-1.5 flex-1 pr-4">
                 <h1 className="text-2xl leading-none text-primary sm:text-[2rem]">Fornecedores</h1>
                 <p className="text-sm leading-6 text-primary/58">
                   Importe fornecedores a partir da planilha da feira. O sistema valida valores, identifica o tipo da chave PIX e salva os dados no banco para uso nas remessas PIX.
@@ -132,7 +135,9 @@ export function FairSuppliersPage({ fairId }: { fairId: string }) {
                   </AlertDescription>
                 </Alert>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex items-center gap-3 flex-wrap lg:flex-nowrap shrink-0">
+                {/* Este botão inicia o fluxo de montagem de uma remessa PIX com base nos fornecedores pendentes da feira. */}
+                <CreatePixRemittanceDialog fairId={fairId} suppliers={items} />
                 <ImportFairSuppliersDialog fairId={fairId} />
                 <FairSupplierUpsertDialog fairId={fairId} />
               </div>
@@ -190,6 +195,8 @@ export function FairSuppliersPage({ fairId }: { fairId: string }) {
             <FairSuppliersTable
               fairId={fairId}
               data={filtered}
+              allSuppliers={items}
+              remittances={remittancesQuery.data ?? []}
               isLoading={query.isLoading}
               isError={query.isError}
             />

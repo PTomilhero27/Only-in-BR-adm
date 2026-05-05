@@ -21,6 +21,12 @@ export function FairDashboardCards({ fairId }: { fairId: string }) {
             accentClass: "border-l-4 border-l-blue-500",
         },
         {
+            title: "Repasses de expositores",
+            description: "Importe e acompanhe repasses Pix dos expositores",
+            href: `/feiras/${fairId}/repasses-expositores`,
+            accentClass: "border-l-4 border-l-emerald-500",
+        },
+        {
             title: "Financeiro",
             description: "Recebíveis, pendências e consolidado da feira",
             href: `/feiras/${fairId}/financeiro`,
@@ -36,7 +42,7 @@ export function FairDashboardCards({ fairId }: { fairId: string }) {
     ];
 
     return (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             {items.map((item) => (
                 <Link key={item.href} href={item.href} className="block">
                     <Card className={`transition hover:shadow-md ${item.accentClass}`}>

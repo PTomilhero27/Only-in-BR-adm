@@ -16,10 +16,19 @@ export const supplierInstallmentStatusValues = [
   "CANCELLED",
 ] as const;
 
+export const pixRemittanceStatusValues = ["GENERATED", "PAID", "CANCELLED"] as const;
+
 export const pixKeyTypeValues = ["CPF", "CNPJ", "EMAIL", "PHONE", "RANDOM"] as const;
 
 export const SupplierStatusSchema = z.enum(supplierStatusValues);
-export const SupplierInstallmentStatusSchema = z.enum(supplierInstallmentStatusValues);
+export const SupplierInstallmentStatusSchema = z.preprocess((value) => {
+  if (value == null || value === "") return "PENDING";
+  if (value === "INCLUDED_IN_REMITTANCE") return "IN_REMITTANCE";
+  if (value === "PAGO") return "PAID";
+  if (value === "NAO_PAGO" || value === "NÃO PAGO") return "PENDING";
+  return value;
+}, z.enum(supplierInstallmentStatusValues));
+export const PixRemittanceStatusSchema = z.enum(pixRemittanceStatusValues);
 export const PixKeyTypeSchema = z.enum(pixKeyTypeValues);
 
 const NullableString = z.string().nullable().optional();
@@ -36,6 +45,7 @@ export const FairSupplierInstallmentSchema = z
     status: SupplierInstallmentStatusSchema.default("PENDING"),
     remittanceId: NullableString,
     remittanceNumber: NullableString,
+    remittanceStatus: PixRemittanceStatusSchema.optional().nullable(),
   })
   .passthrough();
 
@@ -185,6 +195,34 @@ export function getSupplierPendingCents(supplier: FairSupplier) {
   return Math.max(0, supplier.totalAmountCents - getSupplierPaidCents(supplier));
 }
 
+type PayableSupplierInstallmentsOptions = {
+  includeInRemittance?: boolean;
+};
+
+export function getPayableSupplierInstallments(
+  supplier: FairSupplier,
+  options: PayableSupplierInstallmentsOptions = {},
+) {
+  return (supplier.installments ?? []).filter(
+    (installment) =>
+      installment.id &&
+      (installment.status === "PENDING" ||
+        (options.includeInRemittance && installment.status === "IN_REMITTANCE")) &&
+      (installment.amountCents ?? 0) > (installment.paidAmountCents ?? 0),
+  );
+}
+
+export function getSupplierRemittanceAvailableCents(
+  supplier: FairSupplier,
+  options: PayableSupplierInstallmentsOptions = {},
+) {
+  return getPayableSupplierInstallments(supplier, options).reduce(
+    (acc, installment) =>
+      acc + Math.max(0, (installment.amountCents ?? 0) - (installment.paidAmountCents ?? 0)),
+    0,
+  );
+}
+
 export function getSupplierInstallmentStats(supplier: FairSupplier) {
   const installments = supplier.installments ?? [];
   return {
@@ -208,7 +246,10 @@ export function getDisplaySupplierStatus(supplier: FairSupplier): SupplierStatus
   return "PENDING";
 }
 
-export function validateSupplierForPixRemittance(supplier: FairSupplier) {
+export function validateSupplierForPixRemittance(
+  supplier: FairSupplier,
+  options: PayableSupplierInstallmentsOptions = {},
+) {
   const warnings: string[] = [];
   const documentDigits = normalizeDigits(supplier.document);
   const pixType = supplier.pixKeyType;
@@ -218,10 +259,10 @@ export function validateSupplierForPixRemittance(supplier: FairSupplier) {
   if (!supplier.name?.trim()) warnings.push("Nome obrigatorio");
   if (![11, 14].includes(documentDigits.length)) warnings.push("Documento invalido");
   if (!pixType || !pixKey) warnings.push("PIX incompleto");
+  if (getPayableSupplierInstallments(supplier, options).length === 0) warnings.push("Sem parcela pagavel");
   if (supplier.installments.some((i) => !i.amountCents || i.amountCents <= 0)) warnings.push("Parcela sem valor");
   if (installmentsTotal !== supplier.totalAmountCents) warnings.push("Parcela divergente");
-  if (getSupplierPendingCents(supplier) <= 0 && getDisplaySupplierStatus(supplier) !== "PAID") warnings.push("Valor pendente zerado");
-  if (supplier.installments.some((i) => i.status === "IN_REMITTANCE" || !!i.remittanceId)) warnings.push("Ja incluido em remessa");
+  if (getSupplierRemittanceAvailableCents(supplier, options) <= 0 && getDisplaySupplierStatus(supplier) !== "PAID") warnings.push("Valor pendente zerado");
 
   if (pixType === "CPF" && normalizeDigits(pixKey).length !== 11) warnings.push("Chave CPF invalida");
   if (pixType === "CNPJ" && normalizeDigits(pixKey).length !== 14) warnings.push("Chave CNPJ invalida");
