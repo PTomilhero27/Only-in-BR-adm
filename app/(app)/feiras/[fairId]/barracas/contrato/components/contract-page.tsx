@@ -407,10 +407,15 @@ export default function ContractPage() {
   const exhibitorName = owner.fullName?.trim() || "Expositor"
   const exhibitorDoc = owner.document || "—"
 
-  const templateTitle =
+  const contractInstance = (row as any)?.contract?.instance
+
+  const baseTemplateTitle =
     (templateQuery.data as any)?.title ??
     (templateQuery.data as any)?.name ??
     "CONTRATO"
+
+  // Se for um contrato específico com título customizado, ele prevalece
+  const templateTitle = contractInstance?.title || baseTemplateTitle
 
   const templateContentRaw =
     (templateQuery.data as any)?.content ??
@@ -460,8 +465,36 @@ export default function ContractPage() {
 
   const contentForRenderer = React.useMemo(() => {
     if (!templateContentRaw) return null
-    return replaceTokensAny(templateContentRaw, tokens)
-  }, [templateContentRaw, tokens])
+    let html = replaceTokensAny(templateContentRaw, tokens)
+
+    // Se houver notas customizadas do contrato específico, injetamos no final
+    if (contractInstance?.notes) {
+      if (typeof html === "string") {
+        html += `<br/><br/><div style="padding: 16px; border: 1px dashed #ccc; background: #f9fafb;"><strong>Observações Adicionais:</strong><br/>${contractInstance.notes.replace(/\n/g, "<br/>")}</div>`
+      } else if (html && typeof html === "object" && Array.isArray((html as any).blocks)) {
+        // Se for JSON do TipTap, adiciona um bloco extra
+        ;(html as any).blocks.push({
+          id: "custom-notes",
+          type: "freeText",
+          order: 9999,
+          richText: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Observações Adicionais:", marks: [{ type: "bold" }] }]
+              },
+              ...contractInstance.notes.split("\n").map((line: string) => ({
+                type: "paragraph",
+                content: line.trim() ? [{ type: "text", text: line }] : undefined
+              }))
+            ]
+          }
+        })
+      }
+    }
+    return html
+  }, [templateContentRaw, tokens, contractInstance])
 
   async function downloadPdf() {
     if (!containerRef.current) return

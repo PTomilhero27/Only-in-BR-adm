@@ -10,6 +10,7 @@ import {
   exhibitorDisplayName,
   ownerFairStatusLabel,
   stallSizeLabel,
+  contractTypeLabel,
 } from "@/app/modules/fairs/exhibitors/exhibitors.schema";
 
 import {
@@ -391,10 +392,14 @@ function StatusBadge({ status }: { status: OwnerFairStatus }) {
 
 /**
  * Badge de status de assinatura do contrato.
+ * ✅ Atualizado: mostra o tipo do contrato ativo (instance.type)
  */
 function ContractBadge({ row }: { row: FairExhibitorRow }) {
   const signed = row.contractSigned || !!row.contractSignedAt;
   const signedAt = row.contractSignedAt;
+  const contractType = row.contract?.instance?.type ?? null;
+  const contractTitle = row.contract?.instance?.title ?? null;
+  const allContracts = row.contract?.allContracts ?? [];
 
   const signedDate = signedAt
     ? new Date(signedAt).toLocaleDateString("pt-BR", {
@@ -404,18 +409,41 @@ function ContractBadge({ row }: { row: FairExhibitorRow }) {
       })
     : null;
 
+  const typeLabel = contractTypeLabel(contractType);
+  const typeBgClass =
+    contractType === "EXHIBITOR_SPECIFIC"
+      ? "border-violet-200 bg-violet-50 text-violet-700"
+      : contractType === "MULTI_FAIR"
+        ? "border-blue-200 bg-blue-50 text-blue-700"
+        : "";
+
+  const tooltipLines: string[] = [];
+  if (contractType) tooltipLines.push(`Tipo: ${typeLabel}`);
+  if (contractTitle) tooltipLines.push(`Título: ${contractTitle}`);
+  if (allContracts.length > 1) tooltipLines.push(`Total de contratos: ${allContracts.length}`);
+
   if (signed) {
     return (
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Badge
-              variant="outline"
-              className="inline-flex items-center gap-1.5 rounded-full border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
-            >
-              <FilePenLine className="h-3 w-3" />
-              Assinado
-            </Badge>
+            <div className="inline-flex flex-col items-center gap-1">
+              <Badge
+                variant="outline"
+                className="inline-flex items-center gap-1.5 rounded-full border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
+              >
+                <FilePenLine className="h-3 w-3" />
+                Assinado
+              </Badge>
+              {contractType && contractType !== "FAIR_DEFAULT" && (
+                <Badge
+                  variant="outline"
+                  className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", typeBgClass)}
+                >
+                  {typeLabel}
+                </Badge>
+              )}
+            </div>
           </TooltipTrigger>
           <TooltipContent className="max-w-[260px]">
             <div className="text-xs font-medium">Contrato assinado</div>
@@ -424,6 +452,9 @@ function ContractBadge({ row }: { row: FairExhibitorRow }) {
                 Assinado em {signedDate}
               </div>
             )}
+            {tooltipLines.map((l, idx) => (
+              <div key={idx} className="text-xs text-muted-foreground">{l}</div>
+            ))}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -434,19 +465,32 @@ function ContractBadge({ row }: { row: FairExhibitorRow }) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge
-            variant="outline"
-            className="inline-flex items-center gap-1.5 rounded-full border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700"
-          >
-            <Clock className="h-3 w-3" />
-            Pendente
-          </Badge>
+          <div className="inline-flex flex-col items-center gap-1">
+            <Badge
+              variant="outline"
+              className="inline-flex items-center gap-1.5 rounded-full border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700"
+            >
+              <Clock className="h-3 w-3" />
+              Pendente
+            </Badge>
+            {contractType && contractType !== "FAIR_DEFAULT" && (
+              <Badge
+                variant="outline"
+                className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", typeBgClass)}
+              >
+                {typeLabel}
+              </Badge>
+            )}
+          </div>
         </TooltipTrigger>
         <TooltipContent className="max-w-[260px]">
           <div className="text-xs font-medium">Aguardando assinatura</div>
           <div className="mt-0.5 text-xs text-muted-foreground">
             O expositor ainda não assinou o contrato.
           </div>
+          {tooltipLines.map((l, idx) => (
+            <div key={idx} className="text-xs text-muted-foreground">{l}</div>
+          ))}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

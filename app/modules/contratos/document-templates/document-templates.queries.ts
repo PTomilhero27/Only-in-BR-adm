@@ -14,6 +14,7 @@ import type {
   CreateDocumentTemplateInput,
   ListDocumentTemplatesQuery,
   UpdateDocumentTemplateInput,
+  DuplicateDocumentTemplateInput,
 } from "./document-templates.schema"
 import {
   createDocumentTemplate,
@@ -21,6 +22,7 @@ import {
   getDocumentTemplateById,
   listDocumentTemplates,
   updateDocumentTemplate,
+  duplicateDocumentTemplate,
 } from "./document-templates.service"
 
 export const documentTemplatesQueryKeys = {
@@ -146,6 +148,23 @@ export function useDeleteDocumentTemplateMutation() {
       if (id) {
         qc.removeQueries({ queryKey: documentTemplatesQueryKeys.byId(id) })
       }
+    },
+  })
+}
+
+/**
+ * POST /document-templates/:id/duplicate
+ * Invalida todas as listas de templates após duplicação.
+ */
+export function useDuplicateDocumentTemplateMutation() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: (vars: { id: string; input?: DuplicateDocumentTemplateInput }) =>
+      duplicateDocumentTemplate(vars.id, vars.input),
+
+    onSettled: async () => {
+      await qc.invalidateQueries({ queryKey: documentTemplatesQueryKeys.all })
     },
   })
 }

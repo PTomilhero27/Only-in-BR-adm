@@ -1,10 +1,19 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { AlertTriangle, Banknote, Eye, FilePenLine, Link2, Pencil, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -41,7 +50,10 @@ import {
   validateSupplierForPixRemittance,
   type FairSupplier,
 } from "../fair-suppliers.schema";
-import { useDeleteFairSupplierMutation } from "../fair-suppliers.queries";
+import {
+  useDeleteFairSupplierMutation,
+  useDeleteFairSuppliersMutation,
+} from "../fair-suppliers.queries";
 import { SupplierStatusBadge } from "./supplier-status-badge";
 import { SupplierInstallmentsPreview } from "./supplier-installments-preview";
 import { FairSupplierUpsertDialog } from "./fair-supplier-upsert-dialog";
@@ -56,6 +68,7 @@ type Props = {
   remittances?: PixRemittanceListItem[];
   isLoading: boolean;
   isError: boolean;
+  onDeleteAllSuccess?: () => void;
 };
 
 type LinkedRemittance = {
@@ -257,8 +270,11 @@ export function FairSuppliersTable({
   remittances = [],
   isLoading,
   isError,
+  onDeleteAllSuccess,
 }: Props) {
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const deleteMutation = useDeleteFairSupplierMutation(fairId);
+  const deleteManyMutation = useDeleteFairSuppliersMutation(fairId);
 
   async function handleDelete(supplier: FairSupplier) {
     const allowed = supplier.canDelete ?? true;
@@ -285,6 +301,32 @@ export function FairSuppliersTable({
     }
   }
 
+  async function handleDeleteAll() {
+    if (allSuppliers.length === 0) {
+      toast({
+        variant: "warning",
+        title: "Nenhum fornecedor para remover",
+      });
+      return;
+    }
+
+    try {
+      await deleteManyMutation.mutateAsync();
+      setDeleteAllOpen(false);
+      onDeleteAllSuccess?.();
+      toast({
+        variant: "success",
+        title: "Fornecedores excluídos com sucesso.",
+      });
+    } catch (err) {
+      toast({
+        variant: "error",
+        title: "Não foi possível excluir fornecedores",
+        description: getErrorMessage(err),
+      });
+    }
+  }
+
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-white shadow-[0_20px_48px_-42px_rgba(1,0,119,0.12)]">
       <div className="flex flex-col gap-1.5 border-b border-border px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
@@ -298,6 +340,51 @@ export function FairSuppliersTable({
                 : `${data.length} registro(s) nesta lista.`}
           </div>
         </div>
+        <AlertDialog open={deleteAllOpen} onOpenChange={setDeleteAllOpen}>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setDeleteAllOpen(true)}
+            disabled={
+              isLoading ||
+              isError ||
+              allSuppliers.length === 0 ||
+              deleteMutation.isPending ||
+              deleteManyMutation.isPending
+            }
+          >
+            <Trash2 className="h-4 w-4" />
+            {deleteManyMutation.isPending ? "Excluindo..." : "Excluir todos"}
+          </Button>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir todos os fornecedores?</AlertDialogTitle>
+              <AlertDialogDescription className="space-y-3">
+                <span className="block">
+                  Essa ação vai remover todos os fornecedores/prestadores desta feira,
+                  incluindo parcelas que já foram vinculadas a remessas PIX. Remessas
+                  vazias também serão removidas e remessas restantes terão os totais
+                  recalculados.
+                </span>
+                <span className="block font-medium text-rose-700">
+                  Essa ação não pode ser desfeita.
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleteManyMutation.isPending}>
+                Cancelar
+              </AlertDialogCancel>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteAll}
+                disabled={deleteManyMutation.isPending}
+              >
+                {deleteManyMutation.isPending ? "Excluindo..." : "Excluir todos"}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       <div className="px-1">
@@ -419,7 +506,7 @@ export function FairSuppliersTable({
                         allSuppliers={allSuppliers}
                         remittances={remittances}
                         onDelete={() => handleDelete(supplier)}
-                        isDeleting={deleteMutation.isPending}
+                        isDeleting={deleteMutation.isPending || deleteManyMutation.isPending}
                       />
                     </TableCell>
                   </TableRow>

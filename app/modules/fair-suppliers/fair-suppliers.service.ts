@@ -1,4 +1,5 @@
 import { api } from "@/app/shared/http/api";
+import { z } from "zod";
 import {
   FairSupplierSchema,
   FairSuppliersImportPreviewSchema,
@@ -11,6 +12,17 @@ import {
   type UpsertFairSupplierPayload,
   type FairSupplierImportConfig,
 } from "./fair-suppliers.schema";
+
+const DeleteFairSuppliersResponseSchema = z.object({
+  status: z.literal("DELETED"),
+  deletedSuppliers: z.number(),
+  deletedInstallments: z.number(),
+  deletedRemittanceItems: z.number(),
+  deletedRemittances: z.number(),
+  updatedRemittances: z.number(),
+});
+
+export type DeleteFairSuppliersResponse = z.infer<typeof DeleteFairSuppliersResponseSchema>;
 
 /**
  * Service dos fornecedores da feira.
@@ -90,4 +102,11 @@ export async function deleteFairSupplier(params: {
 }): Promise<{ ok: true }> {
   await api.delete(`fairs/${params.fairId}/suppliers/${params.supplierId}`);
   return { ok: true };
+}
+
+export async function deleteFairSuppliers(params: {
+  fairId: string;
+}): Promise<DeleteFairSuppliersResponse> {
+  const data = await api.delete<unknown>(`fairs/${params.fairId}/suppliers`);
+  return DeleteFairSuppliersResponseSchema.parse(data);
 }

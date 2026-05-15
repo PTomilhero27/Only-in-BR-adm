@@ -21,6 +21,7 @@ import {
   type ListDocumentTemplatesSummaryResponse,
   UpdateDocumentTemplateInputSchema,
   type UpdateDocumentTemplateInput,
+  type DuplicateDocumentTemplateInput,
   normalizeContractContent,
 } from "./document-templates.schema"
 
@@ -123,6 +124,29 @@ export async function updateDocumentTemplate(params: {
 
 export async function deleteDocumentTemplate(id: string): Promise<DocumentTemplate> {
   const data = await api.delete<DocumentTemplate>(`document-templates/${id}`)
+
+  const normalized: DocumentTemplate = {
+    ...data,
+    content: normalizeContractContent((data as any)?.content),
+  }
+
+  return DocumentTemplateSchema.parse(normalized)
+}
+
+/**
+ * POST /document-templates/:id/duplicate
+ *
+ * Duplica um template existente. O novo nasce como DRAFT.
+ * ✅ Normaliza content da cópia.
+ */
+export async function duplicateDocumentTemplate(
+  id: string,
+  input?: DuplicateDocumentTemplateInput,
+): Promise<DocumentTemplate> {
+  const data = await api.post<DocumentTemplate>(
+    `document-templates/${id}/duplicate`,
+    input ?? {},
+  )
 
   const normalized: DocumentTemplate = {
     ...data,

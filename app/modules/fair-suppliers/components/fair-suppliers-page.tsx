@@ -94,6 +94,12 @@ export function FairSuppliersPage({ fairId }: { fairId: string }) {
 
   const showMissingFairId = !fairId;
   const showError = !!fairId && query.isError;
+  const clearFilters = () => {
+    setQ("");
+    setStatus("ALL");
+    setPixPending("ALL");
+    setInstallments("ALL");
+  };
 
   return (
     <div className="bg-white px-4 py-4 sm:px-6 lg:px-8 lg:py-5">
@@ -184,12 +190,7 @@ export function FairSuppliersPage({ fairId }: { fairId: string }) {
               onChangePixPending={setPixPending}
               installments={installments}
               onChangeInstallments={setInstallments}
-              onClear={() => {
-                setQ("");
-                setStatus("ALL");
-                setPixPending("ALL");
-                setInstallments("ALL");
-              }}
+              onClear={clearFilters}
             />
 
             <FairSuppliersTable
@@ -199,6 +200,7 @@ export function FairSuppliersPage({ fairId }: { fairId: string }) {
               remittances={remittancesQuery.data ?? []}
               isLoading={query.isLoading}
               isError={query.isError}
+              onDeleteAllSuccess={clearFilters}
             />
           </>
         ) : null}

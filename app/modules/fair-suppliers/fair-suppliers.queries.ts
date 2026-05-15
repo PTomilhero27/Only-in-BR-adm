@@ -5,6 +5,7 @@ import {
   confirmFairSuppliersImport,
   createFairSupplier,
   deleteFairSupplier,
+  deleteFairSuppliers,
   listFairSuppliers,
   previewFairSuppliersImport,
   updateFairSupplier,
@@ -25,6 +26,7 @@ async function invalidateSupplierSideEffects(qc: ReturnType<typeof useQueryClien
     qc.invalidateQueries({ queryKey: fairSuppliersQueryKeys.list(fairId) }),
     qc.invalidateQueries({ queryKey: ["fairs", "payable-items", { fairId }] }),
     qc.invalidateQueries({ queryKey: ["payable-items", { fairId }] }),
+    qc.invalidateQueries({ queryKey: ["fairs", "pix-remittances", "list", { fairId }] }),
     qc.invalidateQueries({ queryKey: ["fairs", "financial-summary", { fairId }] }),
     qc.invalidateQueries({ queryKey: ["fairs", "financeiro", { fairId }] }),
   ]);
@@ -105,6 +107,17 @@ export function useDeleteFairSupplierMutation(fairId: string) {
   return useMutation({
     mutationFn: (supplierId: string) => deleteFairSupplier({ fairId, supplierId }),
     onSuccess: async () => {
+      await invalidateSupplierSideEffects(qc, fairId);
+    },
+  });
+}
+
+export function useDeleteFairSuppliersMutation(fairId: string) {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => deleteFairSuppliers({ fairId }),
+    onSettled: async () => {
       await invalidateSupplierSideEffects(qc, fairId);
     },
   });

@@ -72,6 +72,13 @@ export const ContractTemplateStatusSchema = z.enum([
 ])
 export type ContractTemplateStatus = z.infer<typeof ContractTemplateStatusSchema>
 
+export const ContractTypeSchema = z.enum([
+  "FAIR_DEFAULT",
+  "MULTI_FAIR",
+  "EXHIBITOR_SPECIFIC",
+])
+export type ContractType = z.infer<typeof ContractTypeSchema>
+
 export const BankAccountTypeSchema = z.enum([
   "CORRENTE",
   "POUPANCA",
@@ -318,6 +325,9 @@ export const FairContractInstanceSchema = z.object({
   templateId: z.string(),
   addendumTemplateId: z.string().nullable(),
 
+  type: ContractTypeSchema.optional(),
+  title: z.string().nullable().optional(),
+
   pdfPath: z.string().nullable(),
 
   assinafyDocumentId: z.string().nullable(),
@@ -342,6 +352,17 @@ export const FairAddendumChoiceSchema = z.object({
 })
 export type FairAddendumChoice = z.infer<typeof FairAddendumChoiceSchema>
 
+export const ContractListItemSchema = z.object({
+  id: z.string(),
+  type: ContractTypeSchema,
+  title: z.string().nullable(),
+  templateId: z.string(),
+  pdfPath: z.string().nullable(),
+  signedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+})
+export type ContractListItem = z.infer<typeof ContractListItemSchema>
+
 export const FairExhibitorContractSchema = z.object({
   fairTemplate: z
     .object({
@@ -354,6 +375,8 @@ export const FairExhibitorContractSchema = z.object({
 
   instance: FairContractInstanceSchema.nullable(),
   addendumChoice: FairAddendumChoiceSchema.nullable(),
+
+  allContracts: z.array(ContractListItemSchema).optional().default([]),
 
   signedAt: z.string().datetime().nullable(),
 
@@ -699,4 +722,17 @@ export function slotLabel(slot: MapSlot | null | undefined) {
   if (!slot) return "—"
   if (typeof slot.number === "number") return `Slot ${slot.number}`
   return `Slot ${slot.clientKey}`
+}
+
+export function contractTypeLabel(type: ContractType | string | null | undefined) {
+  switch (type) {
+    case "FAIR_DEFAULT":
+      return "Padrão"
+    case "MULTI_FAIR":
+      return "Multi-Feira"
+    case "EXHIBITOR_SPECIFIC":
+      return "Específico"
+    default:
+      return type ?? "—"
+  }
 }

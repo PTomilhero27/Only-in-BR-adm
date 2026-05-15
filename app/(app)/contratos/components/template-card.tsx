@@ -5,16 +5,20 @@
  * Responsabilidade:
  * - Exibir metadados essenciais.
  * - Navegar para /contratos/:id ao clicar.
+ * - Botão "Duplicar" para criar cópia do template.
  *
  * Observação:
- * - Evitamos “cara de site institucional” usando card compacto, hover sutil e badges discretos.
+ * - Evitamos "cara de site institucional" usando card compacto, hover sutil e badges discretos.
  */
 import { useRouter } from "next/navigation";
-import { ArrowRight, FileText } from "lucide-react";
+import { ArrowRight, FileText, Copy, Loader2 } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { documentTemplateStatusLabel, DocumentTemplateSummary, documentTemplateTypeLabel } from "@/app/modules/contratos/document-templates/document-templates.schema";
+import { useDuplicateDocumentTemplateMutation } from "@/app/modules/contratos/document-templates/document-templates.queries";
+import { toast } from "@/components/ui/toast";
 
 
 
@@ -27,6 +31,25 @@ function statusVariant(status: DocumentTemplateSummary["status"]) {
 
 export function TemplateCard({ template }: { template: DocumentTemplateSummary }) {
   const router = useRouter();
+  const duplicateMutation = useDuplicateDocumentTemplateMutation();
+
+  function handleDuplicate(e: React.MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+
+    duplicateMutation.mutate(
+      { id: template.id },
+      {
+        onSuccess: (created) => {
+          toast.success({ title: `Template "${created.title}" duplicado com sucesso!` });
+          router.push(`/contratos/${created.id}`);
+        },
+        onError: (err: any) => {
+          toast.error(err?.message || "Não foi possível duplicar o template.");
+        },
+      },
+    );
+  }
 
   return (
     <Card
@@ -64,7 +87,24 @@ export function TemplateCard({ template }: { template: DocumentTemplateSummary }
           </div>
         </div>
 
-        <ArrowRight className="mt-1 h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={handleDuplicate}
+            disabled={duplicateMutation.isPending}
+            title="Duplicar template"
+          >
+            {duplicateMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            )}
+          </Button>
+          <ArrowRight className="mt-1 h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+        </div>
       </div>
 
       <div className="flex items-center justify-between text-xs text-muted-foreground">

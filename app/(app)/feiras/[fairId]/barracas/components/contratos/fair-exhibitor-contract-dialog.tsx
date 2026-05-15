@@ -2,16 +2,12 @@
 
 /**
  * FairExhibitorContractDialog
- *
- * - Corrige copy-to-clipboard (sem Runtime NotAllowedError)
- * - Corrige contractId (instance.id ou fallback ownerFairId)
- * - Ajusta layout (cards, truncation do link, botões alinhados)
- * - ✅ Atualiza layout imediatamente ao gerar o link (state local override)
  */
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import type { FairExhibitorRow } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
+import { contractTypeLabel } from "@/app/modules/fairs/exhibitors/exhibitors.schema"
 
 import {
   Dialog,
@@ -26,11 +22,14 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { Copy, Link2, FileText, Loader2, ExternalLink } from "lucide-react"
+import { Copy, Link2, FileText, Loader2, ExternalLink, Plus, ChevronDown, Trash2 } from "lucide-react"
 import { useContractPreview } from "../../context/contract-preview-context"
 
 import { useCreateAssinafySignUrlMutation } from "@/app/modules/contratos/assinafy/assinafy.queries"
+import { useContractDetailQuery, useDeleteContractMutation } from "@/app/modules/contratos/contracts/contracts.queries"
+import { useFairsQuery } from "@/app/modules/fairs/hooks/use-fairs-query"
 import { toast } from "@/components/ui/toast"
+import { CreateExhibitorContractDialog } from "./create-exhibitor-contract-dialog"
 
 type Props = {
   open: boolean
@@ -55,14 +54,7 @@ function formatPtBrDateTime(iso: string) {
   }
 }
 
-/**
- * ✅ Helper robusto pra copiar:
- * - Tenta Clipboard API quando possível
- * - Fallback legacy com textarea + execCommand
- * - Nunca quebra a UI
- */
 async function copyToClipboard(text: string) {
-  // clipboard moderna
   try {
     if (
       typeof navigator !== "undefined" &&
@@ -74,11 +66,8 @@ async function copyToClipboard(text: string) {
       await navigator.clipboard.writeText(text)
       return true
     }
-  } catch {
-    // segue pro fallback
-  }
+  } catch {}
 
-  // fallback legacy
   try {
     if (typeof document === "undefined") return false
     const el = document.createElement("textarea")
@@ -103,19 +92,33 @@ export function FairExhibitorContractDialog({ open, onOpenChange, fairId, row, b
 
   const createSignUrlMutation = useCreateAssinafySignUrlMutation()
 
+  const [createContractOpen, setCreateContractOpen] = React.useState(false)
+  const [allContractsExpanded, setAllContractsExpanded] = React.useState(false)
+
   const ownerFairId = row?.ownerFairId ?? null
 
-  // Fonte de verdade do contrato (backend)
   const contractBlock = row?.contract ?? null
   const instance = contractBlock?.instance ?? null
+  const allContracts = contractBlock?.allContracts ?? []
+  const contractType = instance?.type ?? null
+  const contractCustomTitle = instance?.title ?? null
 
   const backendSignatureUrl = instance?.signUrl ?? contractBlock?.signUrl ?? null
   const backendSignUrlExpiresAt = instance?.signUrlExpiresAt ?? contractBlock?.signUrlExpiresAt ?? null
   const contractPath = instance?.pdfPath ?? null
   const signedAt = contractBlock?.signedAt ?? null
 
-  // ✅ contractId correto: Contract.instance.id; fallback ownerFairId
-  const contractId = row?.contract?.fairTemplate?.id ?? null
+  const contractInstanceId = instance?.id ?? null
+
+  const contractId = instance?.templateId ?? row?.contract?.fairTemplate?.id ?? null
+
+  const contractDetailQuery = useContractDetailQuery(contractType === "MULTI_FAIR" ? (contractInstanceId ?? "") : "")
+  const fairsQuery = useFairsQuery()
+  const deleteMutation = useDeleteContractMutation()
+
+  const canEditContract = Boolean(
+    contractInstanceId && contractType !== "FAIR_DEFAULT" && !contractPath && !signedAt
+  )
 
   const exhibitorName = row?.owner.fullName?.trim() || "Expositor"
   const exhibitorDoc = row?.owner.document || "—"
@@ -123,20 +126,14 @@ export function FairExhibitorContractDialog({ open, onOpenChange, fairId, row, b
 
   const isGeneratingLink = createSignUrlMutation.isPending
 
-  /**
-   * ✅ Estado local para atualizar UI imediatamente após gerar link
-   * (sem esperar refetch/invalidations)
-   */
   const [localSignUrl, setLocalSignUrl] = React.useState<string | null>(null)
   const [localSignUrlExpiresAt, setLocalSignUrlExpiresAt] = React.useState<string | null>(null)
 
-  // quando mudar o expositor/abrir outro row, resetar override local
   React.useEffect(() => {
     setLocalSignUrl(null)
     setLocalSignUrlExpiresAt(null)
   }, [row?.ownerFairId, row?.owner?.id, open])
 
-  // ✅ Fonte final para render: local override > backend
   const signatureUrl = localSignUrl ?? backendSignatureUrl
   const signUrlExpiresAt = localSignUrlExpiresAt ?? backendSignUrlExpiresAt
 
@@ -169,6 +166,30 @@ export function FairExhibitorContractDialog({ open, onOpenChange, fairId, row, b
     onOpenChange(false)
   }
 
+  function handleDeleteContract() {
+    if (!contractInstanceId) return
+    if (!confirm("Tem certeza que deseja excluir este contrato?")) return
+    
+    deleteMutation.mutate(contractInstanceId, {
+      onSuccess: () => {
+        toast.success({ title: "Contrato excluído com sucesso." })
+        onOpenChange(false)
+      },
+      onError: (err: any) => {
+        toast.error(err?.message || "Não foi possível excluir o contrato.")
+      }
+    })
+  }
+
+  const linkedFairs = React.useMemo(() => {
+    if (contractType !== "MULTI_FAIR") return []
+    const links = contractDetailQuery.data?.fairLinks || []
+    return links.map((link) => {
+      const fair = fairsQuery.data?.find((f) => f.id === link.fairId)
+      return fair ? fair.name : `Feira ID: ${link.fairId}`
+    })
+  }, [contractType, contractDetailQuery.data, fairsQuery.data])
+
   function handleGenerateLink() {
     if (!row || !ownerFairId) return
     if (!contractPath) return
@@ -192,11 +213,7 @@ export function FairExhibitorContractDialog({ open, onOpenChange, fairId, row, b
       },
       {
         onSuccess: async (data) => {
-          // ✅ atualiza UI imediatamente
           setLocalSignUrl(data.signUrl)
-          // se sua API devolver expiresAt, encaixa aqui:
-          // setLocalSignUrlExpiresAt(data.signUrlExpiresAt ?? null)
-
           const ok = await copyToClipboard(data.signUrl)
 
           if (ok) {
@@ -215,13 +232,45 @@ export function FairExhibitorContractDialog({ open, onOpenChange, fairId, row, b
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[820px]">
+      <DialogContent className="max-w-[820px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Contrato do expositor</DialogTitle>
-          <DialogDescription>
-            Ações de contrato para{" "}
-            <span className="font-medium text-foreground">{exhibitorName}</span>{" "}
-            <span className="text-muted-foreground">({exhibitorDoc})</span>
+          <DialogTitle className="flex items-center gap-2">
+            Contrato do expositor
+            {contractType && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] font-medium rounded-full px-2 py-0.5",
+                  contractType === "EXHIBITOR_SPECIFIC"
+                    ? "border-violet-200 bg-violet-50 text-violet-700"
+                    : contractType === "MULTI_FAIR"
+                      ? "border-blue-200 bg-blue-50 text-blue-700"
+                      : "border-border bg-muted text-muted-foreground",
+                )}
+              >
+                {contractTypeLabel(contractType)}
+              </Badge>
+            )}
+          </DialogTitle>
+          <DialogDescription asChild>
+            <div>
+              Ações de contrato para{" "}
+              <span className="font-medium text-foreground">{exhibitorName}</span>{" "}
+              <span className="text-muted-foreground">({exhibitorDoc})</span>
+              {contractCustomTitle && (
+                <span className="block mt-0.5 text-xs text-foreground/70">
+                  Título: {contractCustomTitle}
+                </span>
+              )}
+              {contractType === "MULTI_FAIR" && linkedFairs.length > 0 && (
+                <div className="mt-1.5 text-xs text-foreground/80 bg-blue-50 border border-blue-100 p-1.5 rounded-md">
+                  <span className="font-semibold text-blue-700 block mb-0.5">Feiras vinculadas a este contrato:</span>
+                  <ul className="list-disc pl-4 text-blue-600/80">
+                    {linkedFairs.map((f, i) => <li key={i}>{f}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
           </DialogDescription>
         </DialogHeader>
 
@@ -373,14 +422,116 @@ export function FairExhibitorContractDialog({ open, onOpenChange, fairId, row, b
               </div>
             </div>
           </Card>
+
+          {/* Card: todos os contratos (quando > 1) */}
+          {allContracts.length > 1 && (
+            <Card className="p-4">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between text-left"
+                onClick={() => setAllContractsExpanded((v) => !v)}
+              >
+                <div className="space-y-0.5">
+                  <div className="text-sm font-semibold text-foreground">
+                    Todos os contratos ({allContracts.length})
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Este expositor possui múltiplos contratos nesta feira.
+                  </div>
+                </div>
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 text-muted-foreground transition-transform",
+                    allContractsExpanded && "rotate-180",
+                  )}
+                />
+              </button>
+
+              {allContractsExpanded && (
+                <div className="mt-3 space-y-2">
+                  {allContracts.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center justify-between rounded-lg border bg-muted/10 px-3 py-2"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-foreground">
+                            {c.title || contractTypeLabel(c.type)}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-[10px] rounded-full px-1.5 py-0",
+                              c.type === "EXHIBITOR_SPECIFIC"
+                                ? "border-violet-200 bg-violet-50 text-violet-700"
+                                : c.type === "MULTI_FAIR"
+                                  ? "border-blue-200 bg-blue-50 text-blue-700"
+                                  : "border-border bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {contractTypeLabel(c.type)}
+                          </Badge>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {c.signedAt
+                            ? `Assinado em ${formatPtBrDateTime(c.signedAt)}`
+                            : c.pdfPath
+                              ? "PDF gerado — aguardando assinatura"
+                              : "Sem PDF"}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between w-full">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              onClick={() => setCreateContractOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              {canEditContract ? "Editar Contrato" : "Criar Contrato Específico"}
+            </Button>
+            {canEditContract && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="gap-2"
+                onClick={handleDeleteContract}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+                Excluir
+              </Button>
+            )}
+          </div>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Fechar
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {ownerFairId && (
+        <CreateExhibitorContractDialog
+          open={createContractOpen}
+          onOpenChange={setCreateContractOpen}
+          ownerFairId={ownerFairId}
+          exhibitorName={exhibitorName}
+          editContractId={canEditContract ? contractInstanceId : null}
+        />
+      )}
     </Dialog>
   )
 }

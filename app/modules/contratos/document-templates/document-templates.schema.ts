@@ -171,6 +171,11 @@ export const UpdateDocumentTemplateInputSchema = z.object({
 })
 export type UpdateDocumentTemplateInput = z.infer<typeof UpdateDocumentTemplateInputSchema>
 
+export const DuplicateDocumentTemplateInputSchema = z.object({
+  title: z.string().min(1).max(300).optional(),
+})
+export type DuplicateDocumentTemplateInput = z.infer<typeof DuplicateDocumentTemplateInputSchema>
+
 export function documentTemplateStatusLabel(status: DocumentTemplateStatus) {
   switch (status) {
     case "DRAFT":
