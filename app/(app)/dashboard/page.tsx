@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Boxes,
   FileSpreadsheet,
   FileText,
   Megaphone,
@@ -12,6 +13,16 @@ import { DashboardTile } from "./components/dashboard-tile";
 import { FairsDashboardTile } from "./components/fairs/fairs-dashboard-tile";
 
 const dashboardModules = [
+  {
+    title: "Estoque / Armazenagem",
+    description: "Controle itens, reservas, retiradas e devoluções.",
+    href: "/estoque",
+    eyebrow: "Operacao",
+    icon: <Boxes className="h-5 w-5" />,
+    accentClassName: "bg-accent",
+    footer: "Ver estoque",
+    tags: ["Itens", "Reservas"],
+  },
   {
     title: "Vitrine",
     description: "Conteudo publico, beneficios, FAQ e imagens das feiras.",

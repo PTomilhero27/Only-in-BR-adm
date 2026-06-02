@@ -27,7 +27,12 @@ import {
   MoreHorizontal,
   Trash2,
   Plus,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
+
+import { Input } from "@/components/ui/input";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,6 +74,7 @@ interface Props {
 
   onToggleAddendum: (next: boolean) => Promise<void>;
   onToggleRegistration: (next: boolean) => Promise<void>;
+  onUpdateTitle?: (title: string) => Promise<void>;
 
   disableActions?: boolean;
 }
@@ -113,6 +119,7 @@ export function ContractEditorShell({
   onDelete,
   onToggleAddendum,
   onToggleRegistration,
+  onUpdateTitle,
   disableActions,
 }: Props) {
   const [openPreview, setOpenPreview] = useState(false);
@@ -127,8 +134,25 @@ export function ContractEditorShell({
 
   const actionsDisabled = Boolean(disableActions || isLoading);
 
+  // -- Estados para edição inline do Título --
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [tempTitle, setTempTitle] = useState("");
+
   const title =
     template?.title ?? (mode === "create" ? "Novo contrato" : "Contrato");
+
+  function startEditing() {
+    setTempTitle(title);
+    setIsEditingTitle(true);
+  }
+
+  async function saveTitle() {
+    const trimmed = tempTitle.trim();
+    if (trimmed && trimmed !== title && onUpdateTitle) {
+      await onUpdateTitle(trimmed);
+    }
+    setIsEditingTitle(false);
+  }
 
   const status = template?.status ?? ("DRAFT" as DocumentTemplateStatus);
   const isAddendum = template?.isAddendum ?? false;
@@ -238,10 +262,56 @@ export function ContractEditorShell({
                   )}
                 </div>
 
-                {/* ✅ 1 linha + truncate */}
-                <h1 className="min-w-0 truncate text-xl font-semibold leading-snug">
-                  {title}
-                </h1>
+                {isEditingTitle ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={tempTitle}
+                      onChange={(e) => setTempTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveTitle();
+                        if (e.key === "Escape") setIsEditingTitle(false);
+                      }}
+                      className="h-8 max-w-md bg-background text-foreground"
+                      autoFocus
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={saveTitle}
+                      className="h-8 w-8 p-0"
+                    >
+                      <Check className="h-4 w-4 text-emerald-600" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setIsEditingTitle(false)}
+                      className="h-8 w-8 p-0"
+                    >
+                      <X className="h-4 w-4 text-rose-600" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 min-w-0">
+                    <h1 className="min-w-0 truncate text-xl font-semibold leading-snug">
+                      {title}
+                    </h1>
+                    {mode === "edit" && !actionsDisabled && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground hover:text-foreground shrink-0"
+                        onClick={startEditing}
+                        title="Renomear contrato"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-2">

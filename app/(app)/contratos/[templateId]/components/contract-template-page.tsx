@@ -74,6 +74,10 @@ export function ContractTemplatePage({ templateId }: { templateId: string }) {
     await patch({ isAddendum: next });
   }
 
+  async function handleUpdateTitle(newTitle: string) {
+    await patch({ title: newTitle });
+  }
+
   async function handleDelete() {
     await deleteMutation.mutateAsync(templateId);
     router.push("/contratos");
@@ -91,6 +95,7 @@ export function ContractTemplatePage({ templateId }: { templateId: string }) {
         onDelete={handleDelete}
         onToggleAddendum={handleToggleAddendum}
         onToggleRegistration={handleToggleRegistration}
+        onUpdateTitle={handleUpdateTitle}
         isSaving={updateMutation.isPending}
         isDeleting={deleteMutation.isPending}
       />
