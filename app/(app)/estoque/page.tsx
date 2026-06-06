@@ -20,8 +20,22 @@ import {
   PlusCircle,
   RotateCcw,
   Sliders,
+  FolderOpen,
 } from "lucide-react";
 
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "@/components/ui/toast";
+import { getErrorMessage } from "@/app/shared/utils/get-error-message";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppBreadcrumb } from "@/components/breadcrumb/app-breadcrumb";
@@ -36,8 +50,10 @@ import { InventoryItemUpsertDialog } from "@/app/modules/inventory/components/in
 import { InventoryItemsTable } from "@/app/modules/inventory/components/inventory-items-table";
 import { InventoryLoadingSkeleton } from "@/app/modules/inventory/components/inventory-loading-skeleton";
 import { InventoryMovementDialog } from "@/app/modules/inventory/components/inventory-movement-dialog";
+import { ManageCategoriesDialog } from "@/app/modules/inventory/components/manage-categories-dialog";
 
 // Componentes das reservas
+import { ApproveReservationDialog } from "@/app/modules/inventory/components/approve-reservation-dialog";
 import { CancelReservationDialog } from "@/app/modules/inventory/components/cancel-reservation-dialog";
 import { InventoryReservationCreateDialog } from "@/app/modules/inventory/components/inventory-reservation-create-dialog";
 import { InventoryReservationDetailsDialog } from "@/app/modules/inventory/components/inventory-reservation-details-dialog";
@@ -50,6 +66,7 @@ import {
   useInventoryItemsQuery,
   useInventoryMovementsQuery,
   useInventoryReservationsQuery,
+  useReturnManualMovementMutation,
 } from "@/app/modules/inventory/inventory.queries";
 import {
   inventoryMovementTypeLabels,
@@ -58,6 +75,7 @@ import {
   type InventoryMovementType,
   type InventoryReservation,
   type InventoryReservationStatus,
+  type InventoryMovement,
 } from "@/app/modules/inventory/types";
 import { cn } from "@/lib/utils";
 
@@ -91,6 +109,7 @@ export default function InventoryPage() {
   const [detailsItem, setDetailsItem] = useState<InventoryItem | null>(null);
   const [editItem, setEditItem] = useState<InventoryItem | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
 
   // --- Estados das Reservas ---
   const [resSearch, setResSearch] = useState("");
@@ -101,6 +120,7 @@ export default function InventoryPage() {
   const [reservationFilter, setReservationFilter] = useState<"ALL" | "IN_PROGRESS" | "FUTURE" | "CONCLUDED">("ALL");
   const [createReservationOpen, setCreateReservationOpen] = useState(false);
   const [detailsReservation, setDetailsReservation] = useState<InventoryReservation | null>(null);
+  const [approveReservation, setApproveReservation] = useState<InventoryReservation | null>(null);
   const [pickupReservation, setPickupReservation] = useState<InventoryReservation | null>(null);
   const [returnReservation, setReturnReservation] = useState<InventoryReservation | null>(null);
   const [cancelReservation, setCancelReservation] = useState<InventoryReservation | null>(null);
@@ -112,6 +132,12 @@ export default function InventoryPage() {
   const [movFrom, setMovFrom] = useState("");
   const [movTo, setMovTo] = useState("");
   const [movementItem, setMovementItem] = useState<InventoryItem | null>(null);
+
+  // --- Estados de Devolução de Saída Manual ---
+  const [manualReturnOpen, setManualReturnOpen] = useState(false);
+  const [selectedReturnMovement, setSelectedReturnMovement] = useState<InventoryMovement | null>(null);
+  const [returnQtyInput, setReturnQtyInput] = useState("1");
+  const returnManualMutation = useReturnManualMovementMutation();
 
   // --- Queries (Carregamento de Dados) ---
   const itemParams = useMemo(
@@ -197,6 +223,10 @@ export default function InventoryPage() {
                   <Plus className="h-4 w-4" />
                   Adicionar item
                 </Button>
+                <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
+                  <FolderOpen className="h-4 w-4" />
+                  Categorias
+                </Button>
                 <Button variant="outline" onClick={() => setImportOpen(true)}>
                   <FileSpreadsheet className="h-4 w-4" />
                   Importar planilha
@@ -219,26 +249,31 @@ export default function InventoryPage() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="w-full justify-start border-b border-border/80 bg-transparent p-0 rounded-none h-fit">
-            <TabsTrigger
-              value="items"
-              className="relative rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2.5 font-semibold text-muted-foreground data-[state=active]:text-primary shadow-none data-[state=active]:shadow-none"
-            >
-              Itens no Estoque ({items.length})
-            </TabsTrigger>
-            <TabsTrigger
-              value="reservations"
-              className="relative rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2.5 font-semibold text-muted-foreground data-[state=active]:text-primary shadow-none data-[state=active]:shadow-none"
-            >
-              Reservas
-            </TabsTrigger>
-            <TabsTrigger
-              value="movements"
-              className="relative rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2.5 font-semibold text-muted-foreground data-[state=active]:text-primary shadow-none data-[state=active]:shadow-none"
-            >
-              Histórico de Movimentações
-            </TabsTrigger>
-          </TabsList>
+          <div className="space-y-3 w-full">
+            {/* Faixa de cor da identidade visual: Amarelo, Verde e Azul */}
+            <div className="h-1 w-full bg-gradient-to-r from-[#f5bd2c] via-[#196132] to-[#010077] rounded-full opacity-90 shadow-sm" />
+            
+            <TabsList className="w-full justify-start border-b border-border/60 bg-transparent p-0 rounded-none h-12 shadow-none">
+              <TabsTrigger
+                value="items"
+                className="relative rounded-none border-0 data-[state=active]:bg-transparent px-5 h-full font-semibold text-sm text-slate-500 data-[state=active]:text-[#010077] shadow-none data-[state=active]:shadow-none transition-all duration-200 hover:text-slate-800 data-[state=active]:after:absolute data-[state=active]:after:bottom-0 data-[state=active]:after:left-0 data-[state=active]:after:right-0 data-[state=active]:after:h-[3px] data-[state=active]:after:bg-gradient-to-r data-[state=active]:after:from-[#f5bd2c] data-[state=active]:after:via-[#196132] data-[state=active]:after:to-[#010077] data-[state=active]:after:rounded-full"
+              >
+                Itens no Estoque ({items.length})
+              </TabsTrigger>
+              <TabsTrigger
+                value="reservations"
+                className="relative rounded-none border-0 data-[state=active]:bg-transparent px-5 h-full font-semibold text-sm text-slate-500 data-[state=active]:text-[#010077] shadow-none data-[state=active]:shadow-none transition-all duration-200 hover:text-slate-800 data-[state=active]:after:absolute data-[state=active]:after:bottom-0 data-[state=active]:after:left-0 data-[state=active]:after:right-0 data-[state=active]:after:h-[3px] data-[state=active]:after:bg-gradient-to-r data-[state=active]:after:from-[#f5bd2c] data-[state=active]:after:via-[#196132] data-[state=active]:after:to-[#010077] data-[state=active]:after:rounded-full"
+              >
+                Reservas
+              </TabsTrigger>
+              <TabsTrigger
+                value="movements"
+                className="relative rounded-none border-0 data-[state=active]:bg-transparent px-5 h-full font-semibold text-sm text-slate-500 data-[state=active]:text-[#010077] shadow-none data-[state=active]:shadow-none transition-all duration-200 hover:text-slate-800 data-[state=active]:after:absolute data-[state=active]:after:bottom-0 data-[state=active]:after:left-0 data-[state=active]:after:right-0 data-[state=active]:after:h-[3px] data-[state=active]:after:bg-gradient-to-r data-[state=active]:after:from-[#f5bd2c] data-[state=active]:after:via-[#196132] data-[state=active]:after:to-[#010077] data-[state=active]:after:rounded-full"
+              >
+                Histórico de Movimentações
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="items" className="space-y-6 outline-none">
             <InventoryDashboardCards items={items} />
@@ -309,6 +344,7 @@ export default function InventoryPage() {
               <InventoryReservationsTable
                 reservations={filteredReservations}
                 onView={setDetailsReservation}
+                onApprove={setApproveReservation}
                 onPickup={setPickupReservation}
                 onReturn={setReturnReservation}
                 onCancel={setCancelReservation}
@@ -354,18 +390,36 @@ export default function InventoryPage() {
                     </div>
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                        <h4 className="font-semibold text-primary">
-                          {inventoryMovementTypeLabels[movement.type]} de {movement.quantity}x{" "}
-                          {movement.itemName ?? movement.item?.name ?? "-"}
-                        </h4>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="font-semibold text-primary">
+                            {inventoryMovementTypeLabels[movement.type]} de {movement.quantity}x{" "}
+                            {movement.itemName ?? movement.item?.name ?? "-"}
+                          </h4>
+                          {movement.requiresReturn && (
+                            <>
+                              {movement.returnedQty === 0 ? (
+                                <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 font-normal text-xs">
+                                  Devolução Pendente
+                                </Badge>
+                              ) : (movement.returnedQty ?? 0) < movement.quantity ? (
+                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 font-normal text-xs">
+                                  Devolvido parcialmente ({movement.returnedQty}/{movement.quantity})
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-normal text-xs">
+                                  Devolução Concluída
+                                </Badge>
+                              )}
+                            </>
+                          )}
+                        </div>
                         <span className="text-xs text-muted-foreground">
                           {movement.createdAt ? new Date(movement.createdAt).toLocaleString("pt-BR") : "-"}
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {movement.responsibleName ?? movement.createdByName
-                          ? `Registrado por: ${movement.responsibleName ?? movement.createdByName}`
-                          : ""}
+                        {movement.createdByName ? `Registrado por: ${movement.createdByName}` : ""}
+                        {movement.responsibleName ? ` • Retirado por: ${movement.responsibleName}` : ""}
                         {movement.fairName || movement.purpose
                           ? ` • Evento/Finalidade: ${movement.fairName ?? movement.purpose}`
                           : ""}
@@ -373,6 +427,23 @@ export default function InventoryPage() {
                       {movement.notes && (
                         <div className="mt-2 rounded-md bg-muted/40 p-2.5 text-xs italic text-muted-foreground border-l-2 border-border">
                           "{movement.notes}"
+                        </div>
+                      )}
+                      {movement.requiresReturn && (movement.returnedQty ?? 0) < movement.quantity && (
+                        <div className="mt-2 flex justify-end">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs border-primary/30 hover:border-primary hover:bg-primary/5 text-primary gap-1"
+                            onClick={() => {
+                              setSelectedReturnMovement(movement);
+                              setReturnQtyInput(String(movement.quantity - (movement.returnedQty ?? 0)));
+                              setManualReturnOpen(true);
+                            }}
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            Registrar devolução
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -408,6 +479,10 @@ export default function InventoryPage() {
         onOpenChange={(open) => !open && setMovementItem(null)}
         item={movementItem}
       />
+      <ManageCategoriesDialog
+        open={categoriesOpen}
+        onOpenChange={setCategoriesOpen}
+      />
       <InventoryImportDialog open={importOpen} onOpenChange={setImportOpen} />
 
       <InventoryReservationCreateDialog
@@ -419,6 +494,11 @@ export default function InventoryPage() {
         open={!!detailsReservation}
         onOpenChange={(open) => !open && setDetailsReservation(null)}
         reservation={detailsReservation}
+      />
+      <ApproveReservationDialog
+        open={!!approveReservation}
+        onOpenChange={(open) => !open && setApproveReservation(null)}
+        reservation={approveReservation}
       />
       <PickupReservationDialog
         open={!!pickupReservation}
@@ -435,6 +515,111 @@ export default function InventoryPage() {
         onOpenChange={(open) => !open && setCancelReservation(null)}
         reservation={cancelReservation}
       />
+
+      {/* Dialog de Devolução de Saída Manual */}
+      <Dialog open={manualReturnOpen} onOpenChange={setManualReturnOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Registrar devolução manual</DialogTitle>
+            <DialogDescription>
+              Informe a quantidade a ser devolvida para o estoque.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedReturnMovement && (
+            <div className="space-y-4 py-2">
+              <div className="rounded-lg bg-slate-50 p-3.5 text-sm space-y-1.5 border border-border">
+                <p className="text-slate-600">
+                  <strong>Item:</strong> {selectedReturnMovement.itemName ?? "-"}
+                </p>
+                <p className="text-slate-600">
+                  <strong>Quantidade retirada:</strong> {selectedReturnMovement.quantity} unidades
+                </p>
+                <p className="text-slate-600">
+                  <strong>Já devolvido:</strong> {selectedReturnMovement.returnedQty ?? 0} unidades
+                </p>
+                <p className="text-slate-700 font-medium pt-1 border-t">
+                  <strong>Pendente:</strong> {selectedReturnMovement.quantity - (selectedReturnMovement.returnedQty ?? 0)} unidades
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="returnQty">Quantidade a devolver</Label>
+                <Input
+                  id="returnQty"
+                  type="number"
+                  min={1}
+                  value={returnQtyInput}
+                  onChange={(e) => setReturnQtyInput(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => setManualReturnOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={returnManualMutation.isPending || !selectedReturnMovement}
+              onClick={async () => {
+                if (!selectedReturnMovement) return;
+                const qty = Number(returnQtyInput);
+                if (!Number.isInteger(qty) || qty <= 0) {
+                  toast.warning({ title: "Informe uma quantidade válida (inteira e maior que zero)." });
+                  return;
+                }
+
+                try {
+                  await returnManualMutation.mutateAsync({
+                    id: selectedReturnMovement.id,
+                    quantity: qty,
+                    finalize: true,
+                  });
+                  toast.success({ title: "Devolução concluída com sucesso" });
+                  setManualReturnOpen(false);
+                } catch (err) {
+                  toast.error({
+                    title: "Erro ao concluir devolução",
+                    subtitle: getErrorMessage(err),
+                  });
+                }
+              }}
+            >
+              Concluir devolução
+            </Button>
+            <Button
+              disabled={returnManualMutation.isPending || !selectedReturnMovement}
+              onClick={async () => {
+                if (!selectedReturnMovement) return;
+                const qty = Number(returnQtyInput);
+                if (!Number.isInteger(qty) || qty <= 0) {
+                  toast.warning({ title: "Informe uma quantidade válida (inteira e maior que zero)." });
+                  return;
+                }
+
+                try {
+                  await returnManualMutation.mutateAsync({
+                    id: selectedReturnMovement.id,
+                    quantity: qty,
+                    finalize: false,
+                  });
+                  toast.success({ title: "Devolução registrada com sucesso" });
+                  setManualReturnOpen(false);
+                } catch (err) {
+                  toast.error({
+                    title: "Erro ao registrar devolução",
+                    subtitle: getErrorMessage(err),
+                  });
+                }
+              }}
+            >
+              {returnManualMutation.isPending ? "Registrando..." : "Registrar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -22,7 +22,6 @@ import {
 import { toast } from "@/components/ui/toast";
 
 import {
-  useApproveInventoryReservationMutation,
   useMarkInventoryReservationReadyMutation,
   useMarkInventoryReservationSeparatingMutation,
 } from "../inventory.queries";
@@ -31,17 +30,18 @@ import type { InventoryReservation } from "../types";
 export function ReservationActionsMenu({
   reservation,
   onView,
+  onApprove,
   onPickup,
   onReturn,
   onCancel,
 }: {
   reservation: InventoryReservation;
   onView: () => void;
+  onApprove: () => void;
   onPickup: () => void;
   onReturn: () => void;
   onCancel: () => void;
 }) {
-  const approveMutation = useApproveInventoryReservationMutation();
   const separatingMutation = useMarkInventoryReservationSeparatingMutation();
   const readyMutation = useMarkInventoryReservationReadyMutation();
 
@@ -82,24 +82,7 @@ export function ReservationActionsMenu({
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {canApprove ? (
-          <DropdownMenuItem
-            onClick={() =>
-              runAction(
-                () =>
-                  approveMutation.mutateAsync({
-                    id: reservation.id,
-                    payload: {
-                      items: reservation.items.map((item) => ({
-                        itemId: item.itemId,
-                        approvedQty: item.requestedQty,
-                        notes: item.notes ?? null,
-                      })),
-                    },
-                  }),
-                "Reserva aprovada",
-              )
-            }
-          >
+          <DropdownMenuItem onClick={onApprove}>
             <PackageCheck className="h-4 w-4" />
             Aprovar
           </DropdownMenuItem>

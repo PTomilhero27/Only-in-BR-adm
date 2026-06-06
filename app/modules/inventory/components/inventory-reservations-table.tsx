@@ -24,12 +24,14 @@ import { ReservationStatusBadge } from "./reservation-status-badge";
 export function InventoryReservationsTable({
   reservations,
   onView,
+  onApprove,
   onPickup,
   onReturn,
   onCancel,
 }: {
   reservations: InventoryReservation[];
   onView: (reservation: InventoryReservation) => void;
+  onApprove: (reservation: InventoryReservation) => void;
   onPickup: (reservation: InventoryReservation) => void;
   onReturn: (reservation: InventoryReservation) => void;
   onCancel: (reservation: InventoryReservation) => void;
@@ -77,6 +79,7 @@ export function InventoryReservationsTable({
                 <ReservationActionsMenu
                   reservation={reservation}
                   onView={() => onView(reservation)}
+                  onApprove={() => onApprove(reservation)}
                   onPickup={() => onPickup(reservation)}
                   onReturn={() => onReturn(reservation)}
                   onCancel={() => onCancel(reservation)}

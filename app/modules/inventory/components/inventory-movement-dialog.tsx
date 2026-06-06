@@ -10,6 +10,9 @@
 
 import { useEffect, useState } from "react";
 
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/app/shared/http/api";
+import { useAuth } from "@/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,7 +38,7 @@ import { getErrorMessage } from "@/app/shared/utils/get-error-message";
 import { useCreateInventoryMovementMutation } from "../inventory.queries";
 import { inventoryMovementTypeLabels, type InventoryItem } from "../types";
 
-type ManualMovementType = "IN" | "ADJUSTMENT" | "DAMAGE";
+type ManualMovementType = "IN" | "OUT" | "ADJUSTMENT" | "DAMAGE";
 
 export function InventoryMovementDialog({
   open,
@@ -46,11 +49,24 @@ export function InventoryMovementDialog({
   onOpenChange: (open: boolean) => void;
   item?: InventoryItem | null;
 }) {
+  const { user } = useAuth();
   const [type, setType] = useState<ManualMovementType>("IN");
   const [quantity, setQuantity] = useState("1");
   const [purpose, setPurpose] = useState("");
   const [notes, setNotes] = useState("");
+  const [hasReturn, setHasReturn] = useState<"yes" | "no">("no");
+  const [responsibleName, setResponsibleName] = useState("");
   const mutation = useCreateInventoryMovementMutation();
+
+  const { data: usersData } = useQuery({
+    queryKey: ["users-list"],
+    queryFn: async () => {
+      const res = await api.get("users");
+      return res as { items: Array<{ id: string; name: string; email: string }> };
+    },
+    enabled: open,
+  });
+  const users = usersData?.items ?? [];
 
   useEffect(() => {
     if (!open) return;
@@ -58,7 +74,9 @@ export function InventoryMovementDialog({
     setQuantity("1");
     setPurpose("");
     setNotes("");
-  }, [open]);
+    setHasReturn("no");
+    setResponsibleName(user?.name ?? "");
+  }, [open, user]);
 
   async function handleSubmit() {
     if (!item) return;
@@ -69,9 +87,39 @@ export function InventoryMovementDialog({
       return;
     }
 
-    if ((type === "ADJUSTMENT" || type === "DAMAGE") && !notes.trim()) {
-      toast.warning({ title: "Observação obrigatória para ajuste ou dano." });
+    if ((type === "OUT" || type === "DAMAGE") && parsedQuantity > (item.currentQty ?? 0)) {
+      toast.warning({
+        title: "Quantidade insuficiente em estoque.",
+        subtitle: `O estoque atual deste item é de ${item.currentQty} unidades.`,
+      });
       return;
+    }
+
+    if (!notes.trim()) {
+      toast.warning({ title: "Observação obrigatória para todas as movimentações." });
+      return;
+    }
+
+    if (type === "OUT" && !responsibleName.trim()) {
+      toast.warning({ title: "Informe o responsável pela retirada." });
+      return;
+    }
+
+    let finalNotes = notes.trim();
+    let finalPurpose = purpose.trim();
+
+    if (type === "OUT") {
+      const current = item.currentQty ?? 0;
+      const diff = Math.max(current - parsedQuantity, 0);
+      if (hasReturn === "no") {
+        const consumptionNote = `Saída para consumo. Retirado do estoque (Saldo anterior: ${current}, Novo saldo: ${diff}).`;
+        finalNotes = `${finalNotes} - ${consumptionNote}`;
+        finalPurpose = finalPurpose || "Consumo";
+      } else {
+        const returnNote = `Saída temporária (pendente de devolução).`;
+        finalNotes = `${finalNotes} - ${returnNote}`;
+        finalPurpose = finalPurpose || "Empréstimo/Uso temporário";
+      }
     }
 
     try {
@@ -80,8 +128,10 @@ export function InventoryMovementDialog({
         payload: {
           type,
           quantity: parsedQuantity,
-          purpose: purpose.trim() || undefined,
-          notes: notes.trim() || undefined,
+          purpose: finalPurpose || undefined,
+          notes: finalNotes,
+          requiresReturn: type === "OUT" && hasReturn === "yes" ? true : undefined,
+          responsibleName: type === "OUT" ? responsibleName.trim() : undefined,
         },
       });
       toast.success({ title: "Movimentação registrada" });
@@ -112,7 +162,7 @@ export function InventoryMovementDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(["IN", "ADJUSTMENT", "DAMAGE"] as ManualMovementType[]).map((value) => (
+                {(["IN", "OUT", "ADJUSTMENT", "DAMAGE"] as ManualMovementType[]).map((value) => (
                   <SelectItem key={value} value={value}>
                     {inventoryMovementTypeLabels[value]}
                   </SelectItem>
@@ -120,6 +170,40 @@ export function InventoryMovementDialog({
               </SelectContent>
             </Select>
           </div>
+          {type === "OUT" && (
+            <div className="space-y-2">
+              <Label>Vai ter devolução?</Label>
+              <Select
+                value={hasReturn}
+                onValueChange={(value) => setHasReturn(value as "yes" | "no")}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="yes">Sim</SelectItem>
+                  <SelectItem value="no">Não (Saída para consumo)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {type === "OUT" && (
+            <div className="space-y-2">
+              <Label>Responsável pela retirada</Label>
+              <Select value={responsibleName} onValueChange={setResponsibleName}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Selecionar responsável" />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={u.name}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-2">
             <Label>Quantidade</Label>
             <Input

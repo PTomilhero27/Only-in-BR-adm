@@ -74,7 +74,12 @@ export function InventoryMovementsTable({
               </TableCell>
               <TableCell>{movement.quantity}</TableCell>
               <TableCell>{movement.fairName ?? movement.purpose ?? "-"}</TableCell>
-              <TableCell>{movement.responsibleName ?? movement.createdByName ?? "-"}</TableCell>
+              <TableCell>
+                {[
+                  movement.createdByName ? `Registrado por: ${movement.createdByName}` : "",
+                  movement.responsibleName ? `Retirado por: ${movement.responsibleName}` : ""
+                ].filter(Boolean).join(" • ") || "-"}
+              </TableCell>
               <TableCell className="max-w-[320px] whitespace-normal">
                 {movement.notes || "-"}
               </TableCell>

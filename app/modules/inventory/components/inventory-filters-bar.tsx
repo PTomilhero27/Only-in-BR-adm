@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { useInventoryCategoriesQuery } from "../inventory.queries";
 import {
   inventoryItemStatusLabels,
   inventoryMovementTypeLabels,
@@ -50,6 +51,8 @@ type InventoryFiltersBarProps = {
 };
 
 export function InventoryFiltersBar(props: InventoryFiltersBarProps) {
+  const { data: categories = [] } = useInventoryCategoriesQuery();
+
   return (
     <div className="grid gap-3 rounded-lg border bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
       {props.onSearchChange ? (
@@ -65,11 +68,22 @@ export function InventoryFiltersBar(props: InventoryFiltersBarProps) {
       ) : null}
 
       {props.onCategoryChange ? (
-        <Input
-          value={props.category ?? ""}
-          onChange={(event) => props.onCategoryChange?.(event.target.value)}
-          placeholder="Categoria"
-        />
+        <Select
+          value={props.category || "ALL"}
+          onValueChange={(value) => props.onCategoryChange?.(value === "ALL" ? "" : value)}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Categoria" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Todas as categorias</SelectItem>
+            {categories.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       ) : null}
 
       {props.onItemStatusChange ? (

@@ -44,7 +44,10 @@ export function InventoryItemDetailsDialog({
             </div>
             <Separator />
             <div className="grid gap-3 sm:grid-cols-2">
-              <Info label="Categoria" value={item.category || "Sem categoria"} />
+              <Info
+                label="Categorias"
+                value={item.categories?.map((c) => c.name).join(", ") || item.category || "Sem categoria"}
+              />
               <Info label="Unidade" value={item.unit} />
               <Info label="Quantidade atual" value={String(item.currentQty)} />
               <Info label="Quantidade mínima" value={String(item.minQty)} />

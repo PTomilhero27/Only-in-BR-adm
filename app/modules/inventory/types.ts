@@ -64,10 +64,17 @@ export const inventoryMovementTypeLabels: Record<InventoryMovementType, string> 
     DAMAGE: "Dano",
   };
 
+export type InventoryCategory = {
+  id: string;
+  name: string;
+  createdAt?: string;
+};
+
 export type InventoryItem = {
   id: string;
   name: string;
   category?: string | null;
+  categories: InventoryCategory[];
   unit: string;
   imageUrl?: string | null;
   location?: string | null;
@@ -86,6 +93,7 @@ export type InventoryReservationItem = {
   itemId: string;
   item?: InventoryItem | null;
   itemName?: string | null;
+  unit?: string | null;
   requestedQty: number;
   approvedQty?: number;
   pickedQty?: number;
@@ -131,6 +139,8 @@ export type InventoryMovement = {
   responsibleName?: string | null;
   createdByName?: string | null;
   notes?: string | null;
+  requiresReturn?: boolean;
+  returnedQty?: number;
   createdAt?: string;
 };
 
@@ -185,15 +195,18 @@ export type CreateInventoryItemInput = {
   minQty: number;
   status?: InventoryItemStatus;
   notes?: string | null;
+  categoryIds?: string[];
 };
 
 export type UpdateInventoryItemInput = Partial<CreateInventoryItemInput>;
 
 export type CreateInventoryMovementInput = {
-  type: Extract<InventoryMovementType, "IN" | "ADJUSTMENT" | "DAMAGE">;
+  type: Extract<InventoryMovementType, "IN" | "OUT" | "ADJUSTMENT" | "DAMAGE">;
   quantity: number;
   notes?: string;
   purpose?: string;
+  requiresReturn?: boolean;
+  responsibleName?: string;
 };
 
 export type CheckInventoryAvailabilityInput = {

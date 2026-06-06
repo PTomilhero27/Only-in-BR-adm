@@ -92,7 +92,9 @@ export function InventoryItemsTable({
               <TableRow key={item.id}>
                 <TableCell className="text-center font-medium text-muted-foreground">{index + 1}</TableCell>
                 <TableCell className="font-medium text-primary">{item.name}</TableCell>
-                <TableCell>{item.category || "-"}</TableCell>
+                <TableCell className="max-w-[200px] truncate" title={item.categories?.map((c) => c.name).join(", ") || item.category || ""}>
+                  {item.categories?.map((c) => c.name).join(", ") || item.category || "-"}
+                </TableCell>
                 <TableCell>{item.unit}</TableCell>
                 <TableCell>{item.currentQty}</TableCell>
                 <TableCell>{item.minQty}</TableCell>

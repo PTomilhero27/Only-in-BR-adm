@@ -40,11 +40,18 @@ export const inventoryMovementTypeSchema = z.enum([
 const numberFromApi = z.coerce.number().catch(0);
 const nullableString = z.string().nullable().optional();
 
+export const inventoryCategorySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.string().optional(),
+});
+
 export const inventoryItemSchema = z
   .object({
     id: z.string(),
     name: z.string(),
     category: nullableString,
+    categories: z.array(inventoryCategorySchema).catch([]).optional(),
     unit: z.string().catch("UN").optional(),
     imageUrl: nullableString,
     location: nullableString,
@@ -66,6 +73,7 @@ export const inventoryItemSchema = z
     minQty: item.minQty ?? item.minimumQty ?? item.minQuantity ?? 0,
     status: item.status ?? "IN_STOCK",
     unit: item.unit ?? "UN",
+    categories: item.categories ?? [],
   }));
 
 export const inventoryReservationItemSchema = z
@@ -75,6 +83,8 @@ export const inventoryReservationItemSchema = z
     inventoryItemId: z.string().optional(),
     item: inventoryItemSchema.nullable().optional(),
     itemName: nullableString,
+    name: nullableString,
+    unit: nullableString,
     requestedQty: numberFromApi,
     approvedQty: numberFromApi.optional(),
     pickedQty: numberFromApi.optional(),
@@ -87,7 +97,8 @@ export const inventoryReservationItemSchema = z
   .transform((item) => ({
     ...item,
     itemId: item.itemId || item.inventoryItemId || item.item?.id || "",
-    itemName: item.itemName ?? item.item?.name ?? null,
+    itemName: item.itemName ?? item.name ?? item.item?.name ?? null,
+    unit: item.unit ?? item.item?.unit ?? "UN",
   }));
 
 export const inventoryMovementSchema = z
@@ -109,6 +120,8 @@ export const inventoryMovementSchema = z
     responsibleName: nullableString,
     createdByName: nullableString,
     notes: nullableString,
+    requiresReturn: z.boolean().catch(false).optional(),
+    returnedQty: numberFromApi.optional(),
     createdAt: z.string().optional(),
   })
   .transform((movement) => ({
@@ -184,9 +197,10 @@ export const inventoryMovementsResponseSchema = listResponseSchema(
   inventoryMovementSchema,
 );
 
-export const createInventoryItemSchema = z.object({
+export const createInventoryItemBaseSchema = z.object({
   name: z.string().trim().min(1, "Informe o nome do item."),
   category: z.string().trim().nullable().optional(),
+  categoryIds: z.array(z.string()).optional(),
   unit: z.string().trim().min(1, "Informe a unidade.").default("UN"),
   imageUrl: z.string().trim().nullable().optional(),
   location: z.string().trim().nullable().optional(),
@@ -196,24 +210,30 @@ export const createInventoryItemSchema = z.object({
   notes: z.string().trim().nullable().optional(),
 });
 
-export const updateInventoryItemSchema = createInventoryItemSchema.partial();
-
-export const createInventoryMovementSchema = z
-  .object({
-    type: z.enum(["IN", "ADJUSTMENT", "DAMAGE"]),
-    quantity: z.coerce.number().int().positive("Informe uma quantidade válida."),
-    notes: z.string().trim().optional(),
-    purpose: z.string().trim().optional(),
+export const createInventoryItemSchema = createInventoryItemBaseSchema.transform(
+  ({ initialQty, minQty, ...rest }) => ({
+    ...rest,
+    quantity: initialQty,
+    minQuantity: minQty,
   })
-  .superRefine((value, ctx) => {
-    if ((value.type === "ADJUSTMENT" || value.type === "DAMAGE") && !value.notes) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["notes"],
-        message: "Observação obrigatória para ajuste ou dano.",
-      });
-    }
-  });
+);
+
+export const updateInventoryItemSchema = createInventoryItemBaseSchema.partial().transform(
+  ({ initialQty, minQty, ...rest }) => ({
+    ...rest,
+    ...(initialQty !== undefined ? { quantity: initialQty } : {}),
+    ...(minQty !== undefined ? { minQuantity: minQty } : {}),
+  })
+);
+
+export const createInventoryMovementSchema = z.object({
+  type: z.enum(["IN", "OUT", "ADJUSTMENT", "DAMAGE"]),
+  quantity: z.coerce.number().int().positive("Informe uma quantidade válida."),
+  notes: z.string().trim().min(1, "Observação obrigatória para movimentações manuais."),
+  purpose: z.string().trim().optional(),
+  requiresReturn: z.boolean().optional(),
+  responsibleName: z.string().trim().optional(),
+});
 
 export const checkInventoryAvailabilitySchema = z.object({
   items: z

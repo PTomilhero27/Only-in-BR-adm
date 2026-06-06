@@ -30,6 +30,10 @@ import {
   updateInventoryItem,
   getInventoryImportPreview,
   confirmInventoryImport,
+  listInventoryCategories,
+  createInventoryCategory,
+  deleteInventoryCategory,
+  returnManualMovement,
 } from "./inventory.service";
 import type {
   ApproveInventoryReservationInput,
@@ -61,6 +65,7 @@ export const inventoryKeys = {
     [...inventoryKeys.all, "movements", params ?? {}] as const,
   availability: (payload?: CheckInventoryAvailabilityInput) =>
     [...inventoryKeys.all, "availability", payload ?? {}] as const,
+  categories: () => [...inventoryKeys.all, "categories"] as const,
 };
 
 function invalidateInventoryLists(queryClient: ReturnType<typeof useQueryClient>) {
@@ -273,6 +278,47 @@ export function useConfirmInventoryImportMutation() {
     mutationFn: (payload?: InventoryImportParams) => confirmInventoryImport(payload),
     onSuccess: () => {
       invalidateInventoryLists(queryClient);
+    },
+  });
+}
+
+export function useInventoryCategoriesQuery() {
+  return useQuery({
+    queryKey: inventoryKeys.categories(),
+    queryFn: listInventoryCategories,
+  });
+}
+
+export function useCreateInventoryCategoryMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => createInventoryCategory(name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryKeys.categories() });
+    },
+  });
+}
+
+export function useDeleteInventoryCategoryMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteInventoryCategory(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryKeys.categories() });
+    },
+  });
+}
+
+export function useReturnManualMovementMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; quantity: number; finalize?: boolean }) =>
+      returnManualMovement(args.id, args.quantity, args.finalize),
+    onSuccess: () => {
+      invalidateInventoryLists(queryClient);
+      queryClient.invalidateQueries({
+        queryKey: [...inventoryKeys.all, "movements"],
+      });
     },
   });
 }

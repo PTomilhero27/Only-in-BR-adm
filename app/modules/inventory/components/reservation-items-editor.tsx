@@ -285,7 +285,7 @@ export function ReservationItemsEditor({
                           variant="outline"
                           size="sm"
                           className="h-8 gap-1 hover:border-primary hover:bg-primary/5"
-                          onClick={() => handleQtyChange(item.id, 1)}
+                          onClick={() => handleQtyChange(item.id, Math.max(1, item.currentQty))}
                         >
                           <Plus className="h-3.5 w-3.5" />
                           Adicionar

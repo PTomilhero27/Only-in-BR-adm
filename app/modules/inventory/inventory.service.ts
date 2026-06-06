@@ -8,6 +8,8 @@
  */
 
 import { api } from "@/app/shared/http/api";
+import { z } from "zod";
+
 
 import {
   approveInventoryReservationSchema,
@@ -29,6 +31,7 @@ import {
   inventoryImportParamsSchema,
   inventoryImportPreviewResponseSchema,
   inventoryImportConfirmResponseSchema,
+  inventoryCategorySchema,
 } from "./inventory.schemas";
 import type {
   ApproveInventoryReservationInput,
@@ -51,6 +54,7 @@ import type {
   InventoryImportParams,
   InventoryImportPreviewResponse,
   InventoryImportConfirmResponse,
+  InventoryCategory,
 } from "./types";
 
 function toQuery(params?: Record<string, unknown>) {
@@ -150,21 +154,21 @@ export async function approveInventoryReservation(
   payload: ApproveInventoryReservationInput,
 ): Promise<InventoryReservation> {
   const body = approveInventoryReservationSchema.parse(payload);
-  const data = await api.post(`inventory/reservations/${id}/approve`, body);
+  const data = await api.patch(`inventory/reservations/${id}/approve`, body);
   return inventoryReservationSchema.parse(data);
 }
 
 export async function markInventoryReservationSeparating(
   id: string,
 ): Promise<InventoryReservation> {
-  const data = await api.post(`inventory/reservations/${id}/separating`);
+  const data = await api.patch(`inventory/reservations/${id}/separating`);
   return inventoryReservationSchema.parse(data);
 }
 
 export async function markInventoryReservationReady(
   id: string,
 ): Promise<InventoryReservation> {
-  const data = await api.post(`inventory/reservations/${id}/ready`);
+  const data = await api.patch(`inventory/reservations/${id}/ready`);
   return inventoryReservationSchema.parse(data);
 }
 
@@ -173,7 +177,7 @@ export async function pickupInventoryReservation(
   payload: PickupInventoryReservationInput,
 ): Promise<InventoryReservation> {
   const body = pickupInventoryReservationSchema.parse(payload);
-  const data = await api.post(`inventory/reservations/${id}/pickup`, body);
+  const data = await api.patch(`inventory/reservations/${id}/pickup`, body);
   return inventoryReservationSchema.parse(data);
 }
 
@@ -182,7 +186,7 @@ export async function returnInventoryReservation(
   payload: ReturnInventoryReservationInput,
 ): Promise<InventoryReservation> {
   const body = returnInventoryReservationSchema.parse(payload);
-  const data = await api.post(`inventory/reservations/${id}/return`, body);
+  const data = await api.patch(`inventory/reservations/${id}/return`, body);
   return inventoryReservationSchema.parse(data);
 }
 
@@ -191,7 +195,7 @@ export async function cancelInventoryReservation(
   payload: CancelInventoryReservationInput,
 ): Promise<InventoryReservation> {
   const body = cancelInventoryReservationSchema.parse(payload);
-  const data = await api.post(`inventory/reservations/${id}/cancel`, body);
+  const data = await api.patch(`inventory/reservations/${id}/cancel`, body);
   return inventoryReservationSchema.parse(data);
 }
 
@@ -239,4 +243,30 @@ export async function confirmInventoryImport(
   const body = inventoryImportParamsSchema.parse(payload ?? {});
   const data = await api.post("inventory/import/confirm", body);
   return inventoryImportConfirmResponseSchema.parse(data);
+}
+
+export async function listInventoryCategories(): Promise<InventoryCategory[]> {
+  const data = await api.get("inventory/categories");
+  return z.array(inventoryCategorySchema).parse(data);
+}
+
+export async function createInventoryCategory(name: string): Promise<InventoryCategory> {
+  const data = await api.post("inventory/categories", { name });
+  return inventoryCategorySchema.parse(data);
+}
+
+export async function deleteInventoryCategory(id: string): Promise<void> {
+  await api.delete(`inventory/categories/${id}`);
+}
+
+export async function returnManualMovement(
+  movementId: string,
+  quantity: number,
+  finalize?: boolean,
+): Promise<InventoryMovement> {
+  const data = await api.post(`inventory/movements/${movementId}/return`, {
+    quantity,
+    finalize,
+  });
+  return inventoryMovementSchema.parse(data);
 }
