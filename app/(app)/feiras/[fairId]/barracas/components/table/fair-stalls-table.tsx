@@ -5,6 +5,7 @@ import type {
   FairExhibitorRow,
   OwnerFairStatus,
   StallSize,
+  StallType,
 } from "@/app/modules/fairs/exhibitors/exhibitors.schema";
 import {
   exhibitorDisplayName,
@@ -12,6 +13,7 @@ import {
   stallSizeLabel,
   contractTypeLabel,
 } from "@/app/modules/fairs/exhibitors/exhibitors.schema";
+import { stallTypeLabel } from "../exhibitor/fair-exhibitor-details-dialog";
 
 import {
   Table,
@@ -88,15 +90,16 @@ function TableColGroup() {
   const widths = [
     "8%",  // Expositor
     "12%", // Telefone
-    "16%", // Email
+    "14%", // Email
+    "10%", // Barraca / Banner
     "6%",  // Slot
-    "6%",  // Compradas
-    "8%",  // Vinculadas
-    "8%",  // Tamanhos
+    "5%",  // Compradas
+    "7%",  // Vinculadas
+    "7%",  // Tamanhos
     "11%", // Pagamentos
-    "9%",  // Contrato
-    "9%",  // Status
-    "6%",  // Ações
+    "8%",  // Contrato
+    "8%",  // Status
+    "4%",  // Ações
   ];
 
   return (
@@ -245,6 +248,7 @@ function TableSkeleton() {
             <TableHead className="whitespace-nowrap">Expositor</TableHead>
             <TableHead className="whitespace-nowrap">Telefone</TableHead>
             <TableHead className="whitespace-nowrap">Email</TableHead>
+            <TableHead className="whitespace-nowrap">Barraca / Banner</TableHead>
             <TableHead className="whitespace-nowrap text-center">Slot</TableHead>
             <TableHead className="whitespace-nowrap text-center">Compradas</TableHead>
             <TableHead className="whitespace-nowrap text-center">Vinculadas</TableHead>
@@ -267,6 +271,12 @@ function TableSkeleton() {
               </TableCell>
               <TableCell>
                 <Skeleton className="h-4 w-[180px]" />
+              </TableCell>
+              <TableCell>
+                <div className="space-y-1">
+                  <Skeleton className="h-4 w-[80px]" />
+                  <Skeleton className="h-3 w-[120px]" />
+                </div>
               </TableCell>
               <TableCell className="text-center">
                 <Skeleton className="mx-auto h-8 w-8 rounded-full" />
@@ -775,6 +785,7 @@ export function FairStallsTable({
                   <TableHead className="whitespace-nowrap">Expositor</TableHead>
                   <TableHead className="whitespace-nowrap">Telefone</TableHead>
                   <TableHead className="whitespace-nowrap">Email</TableHead>
+                  <TableHead className="whitespace-nowrap">Barraca / Banner</TableHead>
                   <TableHead className="whitespace-nowrap text-center">Slot</TableHead>
                   <TableHead className="whitespace-nowrap text-center">Compradas</TableHead>
                   <TableHead className="whitespace-nowrap text-center">Vinculadas</TableHead>
@@ -845,6 +856,39 @@ export function FairStallsTable({
                           <Mail className="h-4 w-4 opacity-70 shrink-0" />
                           <span className="truncate whitespace-nowrap">{email}</span>
                         </div>
+                      </TableCell>
+
+                      <TableCell className="min-w-0">
+                        {row.linkedStalls.length > 0 ? (
+                          <div className="flex flex-col gap-1.5 min-w-0">
+                            {row.linkedStalls.map((stall, idx) => {
+                              const typeStr = stallTypeLabel(stall.stallType as StallType);
+                              const bannerStr = stall.bannerName?.trim() || "Sem banner";
+                              return (
+                                <TooltipProvider key={stall.id || idx}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div className="flex flex-col min-w-0 leading-tight cursor-default">
+                                        <span className="font-semibold text-primary truncate block min-w-0">
+                                          {typeStr}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground truncate block min-w-0">
+                                          {bannerStr}
+                                        </span>
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-[360px]">
+                                      <div className="text-xs font-semibold">Tipo: {typeStr}</div>
+                                      <div className="text-xs text-muted-foreground">Banner: {bannerStr}</div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">—</span>
+                        )}
                       </TableCell>
 
                       <TableCell className="text-center">
@@ -919,7 +963,7 @@ export function FairStallsTable({
 
                 {!isError && data.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={11} className="py-10 text-center">
+                    <TableCell colSpan={12} className="py-10 text-center">
                       <div className="text-sm font-medium text-primary">Nenhum expositor encontrado</div>
                       <div className="text-xs text-primary/58">
                         Tente alterar os filtros de busca.
