@@ -91,3 +91,11 @@ export async function removeFairLink(contractId: string, fairId: string): Promis
 export async function deleteContract(id: string): Promise<void> {
   await api.delete(`contracts/${id}`)
 }
+
+/**
+ * POST /contracts/:id/reset
+ * Reinicia o fluxo de um contrato (deleta PDF antigo, cancela fluxo na Assinafy e libera tela).
+ */
+export async function resetContract(id: string): Promise<{ success: boolean }> {
+  return api.post<{ success: boolean }>(`contracts/${id}/reset`)
+}

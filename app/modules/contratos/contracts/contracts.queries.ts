@@ -19,6 +19,7 @@ import {
   addFairLink,
   removeFairLink,
   deleteContract,
+  resetContract,
 } from "./contracts.service"
 
 export const contractsQueryKeys = {
@@ -125,6 +126,26 @@ export function useDeleteContractMutation() {
 
       if (id) {
         qc.removeQueries({ queryKey: contractsQueryKeys.byId(id) })
+      }
+    },
+  })
+}
+
+/**
+ * POST /contracts/:id/reset
+ */
+export function useResetContractMutation() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) => resetContract(id),
+
+    onSettled: async (_data, _err, id) => {
+      await qc.invalidateQueries({ queryKey: contractsQueryKeys.all })
+      await qc.invalidateQueries({ queryKey: ["fairs", "exhibitors"] })
+
+      if (id) {
+        await qc.invalidateQueries({ queryKey: contractsQueryKeys.byId(id) })
       }
     },
   })

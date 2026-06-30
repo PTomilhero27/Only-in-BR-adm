@@ -22,11 +22,11 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { Copy, Link2, FileText, Loader2, ExternalLink, Plus, ChevronDown, Trash2 } from "lucide-react"
+import { Copy, Link2, FileText, Loader2, ExternalLink, Plus, ChevronDown, Trash2, RefreshCw } from "lucide-react"
 import { useContractPreview } from "../../context/contract-preview-context"
 
 import { useCreateAssinafySignUrlMutation } from "@/app/modules/contratos/assinafy/assinafy.queries"
-import { useContractDetailQuery, useDeleteContractMutation } from "@/app/modules/contratos/contracts/contracts.queries"
+import { useContractDetailQuery, useDeleteContractMutation, useResetContractMutation } from "@/app/modules/contratos/contracts/contracts.queries"
 import { useFairsQuery } from "@/app/modules/fairs/hooks/use-fairs-query"
 import { toast } from "@/components/ui/toast"
 import { CreateExhibitorContractDialog } from "./create-exhibitor-contract-dialog"
@@ -115,6 +115,7 @@ export function FairExhibitorContractDialog({ open, onOpenChange, fairId, row, b
   const contractDetailQuery = useContractDetailQuery(contractType === "MULTI_FAIR" ? (contractInstanceId ?? "") : "")
   const fairsQuery = useFairsQuery()
   const deleteMutation = useDeleteContractMutation()
+  const resetMutation = useResetContractMutation()
 
   const canEditContract = Boolean(
     contractInstanceId && contractType !== "FAIR_DEFAULT" && !contractPath && !signedAt
@@ -177,6 +178,22 @@ export function FairExhibitorContractDialog({ open, onOpenChange, fairId, row, b
       },
       onError: (err: any) => {
         toast.error(err?.message || "Não foi possível excluir o contrato.")
+      }
+    })
+  }
+
+  function handleResetContract() {
+    if (!contractInstanceId) return
+    if (!confirm("Tem certeza de que deseja invalidar o contrato atual e iniciar um novo fluxo?")) return
+
+    resetMutation.mutate(contractInstanceId, {
+      onSuccess: () => {
+        setLocalSignUrl(null)
+        setLocalSignUrlExpiresAt(null)
+        toast.success({ title: "Fluxo do contrato reiniciado com sucesso." })
+      },
+      onError: (err: any) => {
+        toast.error(err?.message || "Não foi possível reiniciar o fluxo do contrato.")
       }
     })
   }
@@ -409,15 +426,34 @@ export function FairExhibitorContractDialog({ open, onOpenChange, fairId, row, b
                     )}
                   </div>
 
-                  <Button
-                    type="button"
-                    className="gap-2 sm:shrink-0"
-                    onClick={handleGoToContractPage}
-                    disabled={!row || !contractId}
-                  >
-                    <FileText className="h-4 w-4" />
-                    Baixar / visualizar
-                  </Button>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:shrink-0">
+                    {Boolean(contractInstanceId && !signedAt && (contractPath || signatureUrl)) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200"
+                        onClick={handleResetContract}
+                        disabled={resetMutation.isPending}
+                      >
+                        {resetMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4" />
+                        )}
+                        Reiniciar Contrato
+                      </Button>
+                    )}
+
+                    <Button
+                      type="button"
+                      className="gap-2"
+                      onClick={handleGoToContractPage}
+                      disabled={!row || !contractId}
+                    >
+                      <FileText className="h-4 w-4" />
+                      Baixar / visualizar
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
